@@ -7,13 +7,18 @@
 - ✅ หน้าตาทันสมัยและ responsive ด้วย Tailwind CSS
 - ✅ ฟอร์มกรอก IP/Domain และ Port
 - ✅ **ใช้ itools.zone API ผ่าน CORS Proxy** - ไม่ต้องรัน server แยก
+- ✅ **Multiple CORS Proxy Fallback** - เร็วและเสถียรกว่า
 - ✅ **แปลง Domain เป็น IP อัตโนมัติ** (เช่น play.st20.app → 103.91.190.109)
 - ✅ แสดงข้อมูลเซิร์ฟเวอร์แบบ JSON
 - ✅ แสดงรายละเอียดผู้เล่นเมื่อคลิกชื่อ
-- ✅ แสดง Discord Avatar ของผู้เล่น (ใช้ itools.zone API)
+- ✅ **แสดง Discord Avatar แบบ Batch Processing** - เร็วขึ้น
 - ✅ ตารางผู้เล่นพร้อม Search Filter
 - ✅ SweetAlert2 สำหรับ loading และ error messages
 - ✅ รองรับ URL parameters (ip_address, port)
+- ✅ **Timeout Protection** - ไม่แฮงค์เมื่อ API ช้า
+- ✅ **Professional UI with DaisyUI** - ดูมืออาชีพ
+- ✅ **Theme Switcher** - เปลี่ยน theme ได้
+- ✅ **Improved Layout** - รายชื่อผู้เล่นอยู่ด้านขวา พร้อม search ด้านบน
 
 ## การติดตั้งและรัน
 
@@ -63,7 +68,7 @@ npm run build
 
 ## เทคโนโลยีที่ใช้
 
-- **Frontend:** React + TypeScript + Tailwind CSS + SweetAlert2
+- **Frontend:** React + TypeScript + Tailwind CSS + DaisyUI + SweetAlert2
 - **API:** itools.zone FiveM API
 - **Build Tool:** Vite
 - **Package Manager:** npm
