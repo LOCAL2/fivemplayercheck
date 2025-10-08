@@ -463,7 +463,8 @@ const App: React.FC = () => {
     </div>
   );
 
-  // Classic Loading Modal Component
+
+  /*
   const LoadingModal = () => {
 
     const icons = ['🔌', '�,', '✅', '�'];
@@ -491,7 +492,6 @@ const App: React.FC = () => {
     );
   };
 
-  // Success Modal Component
   const SuccessModal = () => (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
       <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4">
@@ -518,7 +518,6 @@ const App: React.FC = () => {
     </div>
   );
 
-  // Error Modal Component
   const ErrorModal = () => (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
       <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4">
@@ -544,6 +543,7 @@ const App: React.FC = () => {
       </div>
     </div>
   );
+  */
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 hide-scrollbar">
