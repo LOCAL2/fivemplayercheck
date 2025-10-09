@@ -1,37 +1,40 @@
 <!doctype html>
 <html lang="th" class="dark" data-theme="dark">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ตรวจสอบผู้เล่น FiveM - รองรับทุกเซิร์ฟเวอร์</title>
-    
-    <!-- Discord/Social Media Meta Tags -->
-    <meta name="description" content="🎮 เช็คผู้เล่นออนไลน์ในเซิร์ฟเวอร์ FiveM แบบเรียลไทม์ รองรับทุกเซิร์ฟเวอร์ ดูข้อมูลผู้เล่น Discord Avatar และสถิติเซิร์ฟเวอร์" />
-    <meta name="keywords" content="FiveM, เช็คเซิร์ฟเวอร์, ผู้เล่นออนไลน์, ทุกเซิร์ฟเวอร์, roleplay, GTA V, server monitor" />
-    <meta name="author" content="บาร็อง อิสหาด" />
-    
-    <!-- Open Graph / Facebook -->
-    <meta property="og:type" content="website" />
-    <meta property="og:title" content="ตรวจสอบผู้เล่น FiveM" />
-    <meta property="og:description" content="เช็คผู้เล่นออนไลน์ในเซิร์ฟเวอร์ FiveM  รองรับทุกเซิร์ฟเวอร์ " />
-    <meta property="og:image" content="/itshard.jpg" />
-    <meta property="og:url" content="https://your-domain.com" />
-    <meta property="og:site_name" content="FiveM Player Monitor" />
-    
-    <!-- Twitter -->
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="ตรวจสอบผู้เล่น FiveM" />
-    <meta name="twitter:description" content="เช็คผู้เล่นออนไลน์ในเซิร์ฟเวอร์ FiveM  รองรับทุกเซิร์ฟเวอร์" />
-    <meta name="twitter:image" content="/itshard.jpg" />
-    
-    <!-- Discord Embed -->
-    <meta name="theme-color" content="#3B82F6" />
-    <meta property="og:locale" content="th_TH" />
-    
-    <!-- Discord Rich Embed -->
-    <meta property="discord:title" content="🎮 FiveM Player Monitor" />
-    <meta property="discord:description" content="🌐 รองรับทุกเซิร์ฟเวอร์ FiveM ทั่วโลก
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ตรวจสอบผู้เล่น FiveM - รองรับทุกเซิร์ฟเวอร์</title>
+
+  <!-- Discord/Social Media Meta Tags -->
+  <meta name="description"
+    content="เช็คผู้เล่นออนไลน์ในเซิร์ฟเวอร์ FiveM  รองรับทุกเซิร์ฟเวอร์" />
+  <meta name="keywords"
+    content="FiveM, เช็คเซิร์ฟเวอร์, ผู้เล่นออนไลน์, ทุกเซิร์ฟเวอร์, roleplay, GTA V, server monitor" />
+  <meta name="author" content="บาร็อง อิสหาด" />
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="ตรวจสอบผู้เล่น FiveM" />
+  <meta property="og:description" content="เช็คผู้เล่นออนไลน์ในเซิร์ฟเวอร์ FiveM  รองรับทุกเซิร์ฟเวอร์ " />
+  <meta property="og:image" content="/itshard.jpg" />
+  <meta property="og:url" content="https://your-domain.com" />
+  <meta property="og:site_name" content="FiveM Player Monitor" />
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="ตรวจสอบผู้เล่น FiveM" />
+  <meta name="twitter:description" content="เช็คผู้เล่นออนไลน์ในเซิร์ฟเวอร์ FiveM  รองรับทุกเซิร์ฟเวอร์" />
+  <meta name="twitter:image" content="/itshard.jpg" />
+
+  <!-- Discord Embed -->
+  <meta name="theme-color" content="#3B82F6" />
+  <meta property="og:locale" content="th_TH" />
+
+  <!-- Discord Rich Embed -->
+  <meta property="discord:title" content="🎮 FiveM Player Monitor" />
+  <meta property="discord:description" content="🌐 รองรับทุกเซิร์ฟเวอร์ FiveM ทั่วโลก
 ✨ เช็คผู้เล่นออนไลน์แบบเรียลไทม์
 👥 แสดง Discord Avatar ของผู้เล่น
 📊 SHA256 Hash Verification
@@ -39,49 +42,51 @@
 📱 รองรับทุกอุปกรณ์ (Mobile/Desktop)
 
 by บาร็อง อิสหาด" />
-    
-    <!-- Additional Meta -->
-    <meta name="robots" content="index, follow" />
-    <meta name="language" content="English" />
-    <meta name="revisit-after" content="7 days" />
-    <style>
-      /* Ensure smooth theme transitions */
-      * {
-        transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+
+  <!-- Additional Meta -->
+  <meta name="robots" content="index, follow" />
+  <meta name="language" content="English" />
+  <meta name="revisit-after" content="7 days" />
+  <style>
+    /* Ensure smooth theme transitions */
+    * {
+      transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+    }
+
+    /* Hide scrollbar globally */
+    ::-webkit-scrollbar {
+      width: 0px;
+      background: transparent;
+    }
+
+    html {
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      overflow-x: hidden;
+    }
+  </style>
+
+  <!-- Theme initialization script -->
+  <script>
+    (function () {
+      const savedTheme = localStorage.getItem('theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', savedTheme);
+      document.documentElement.classList.toggle('dark', savedTheme === 'dark');
+      if (savedTheme === 'light') {
+        document.documentElement.classList.remove('dark');
       }
-      
-      /* Hide scrollbar globally */
-      ::-webkit-scrollbar {
-        width: 0px;
-        background: transparent;
-      }
-      
-      html {
-        scrollbar-width: none;
-        -ms-overflow-style: none;
-      }
-      
-      body {
-        margin: 0;
-        padding: 0;
-        overflow-x: hidden;
-      }
-    </style>
-    
-    <!-- Theme initialization script -->
-    <script>
-      (function() {
-        const savedTheme = localStorage.getItem('theme') || 'dark';
-        document.documentElement.setAttribute('data-theme', savedTheme);
-        document.documentElement.classList.toggle('dark', savedTheme === 'dark');
-        if (savedTheme === 'light') {
-          document.documentElement.classList.remove('dark');
-        }
-      })();
-    </script>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+    })();
+  </script>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+
 </html>
