@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 
 interface Player {
   id: number;
@@ -16,6 +16,13 @@ interface ServerData {
 interface PlayerWithDiscord extends Player {
   discordId?: string;
   discordAvatar?: string;
+}
+
+interface ServerHistoryItem {
+  address: string;
+  customName?: string;
+  logo?: string;
+  lastUsed: number;
 }
 
 const fetchDiscordAvatar = async (discordId: string): Promise<string | undefined> => {
@@ -51,10 +58,16 @@ const App: React.FC = () => {
   const [currentTheme, setCurrentTheme] = useState('dark');
   const [showLoading, setShowLoading] = useState(false);
   const [notifications, setNotifications] = useState<{ id: number, type: 'success' | 'error', message: string }[]>([]);
-  const [serverHistory, setServerHistory] = useState<string[]>([]);
+  const [serverHistory, setServerHistory] = useState<ServerHistoryItem[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const playersPerPage = 20;
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingServer, setEditingServer] = useState<ServerHistoryItem | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editLogo, setEditLogo] = useState('');
+  const [logoType, setLogoType] = useState<'url' | 'file'>('url');
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
 
   useEffect(() => {
@@ -65,18 +78,36 @@ const App: React.FC = () => {
     if (ipParam) setServerIp(ipParam);
     if (portParam) setServerPort(portParam);
 
+
+
     // Set initial theme to dark by default
     const savedTheme = localStorage.getItem('theme') || 'dark';
+    
+    // Apply theme immediately
     document.documentElement.setAttribute('data-theme', savedTheme);
-    document.documentElement.classList.toggle('dark', savedTheme === 'dark');
+    if (savedTheme === 'dark') {
+      document.documentElement.classList.add('dark');
+      document.body.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      document.body.classList.remove('dark');
+    }
+    
     setCurrentTheme(savedTheme);
+    console.log('Initial theme loaded:', savedTheme);
 
     // Load server history from localStorage
     const savedHistory = localStorage.getItem('serverHistory');
     if (savedHistory) {
       try {
-        const history = JSON.parse(savedHistory);
-        setServerHistory(history);
+        const history = JSON.parse(savedHistory as string);
+        // Convert old format to new format if needed
+        const convertedHistory = history.map((item: any) =>
+          typeof item === 'string'
+            ? { address: item, lastUsed: Date.now() }
+            : item
+        );
+        setServerHistory(convertedHistory);
       } catch (error) {
         console.warn('Failed to parse server history:', error);
       }
@@ -84,22 +115,47 @@ const App: React.FC = () => {
   }, []);
 
   const changeTheme = (theme: string) => {
+    // Update HTML attributes
     document.documentElement.setAttribute('data-theme', theme);
-    document.documentElement.classList.toggle('dark', theme === 'dark');
+    
+    // Update classes properly
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+      document.body.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      document.body.classList.remove('dark');
+    }
+    
+    // Save to localStorage
     localStorage.setItem('theme', theme);
     setCurrentTheme(theme);
-
-    // Force re-render by updating body class
-    document.body.className = theme === 'dark' ? 'dark' : '';
+    
+    // Force a small delay to ensure DOM updates
+    setTimeout(() => {
+      console.log('Theme changed to:', theme);
+    }, 100);
   };
 
   const addToServerHistory = (serverAddress: string) => {
     const fullAddress = `${serverAddress}:${serverPort}`;
     setServerHistory(prev => {
+      // Find existing entry to preserve customName and logo
+      const existingEntry = prev.find(item => item.address === fullAddress);
+
       // Remove if already exists to avoid duplicates
-      const filtered = prev.filter(addr => addr !== fullAddress);
-      // Add to beginning of array (most recent first)
-      const newHistory = [fullAddress, ...filtered].slice(0, 5); // Keep only last 5
+      const filtered = prev.filter(item => item.address !== fullAddress);
+
+      // Add to beginning of array (most recent first), preserving custom data
+      const newHistory = [
+        {
+          address: fullAddress,
+          lastUsed: Date.now(),
+          customName: existingEntry?.customName,
+          logo: existingEntry?.logo
+        },
+        ...filtered
+      ].slice(0, 5); // Keep only last 5
 
       // Save to localStorage
       localStorage.setItem('serverHistory', JSON.stringify(newHistory));
@@ -107,8 +163,8 @@ const App: React.FC = () => {
     });
   };
 
-  const selectFromHistory = (historyItem: string) => {
-    const [ip, port] = historyItem.split(':');
+  const selectFromHistory = (historyItem: ServerHistoryItem) => {
+    const [ip, port] = historyItem.address.split(':');
     setServerIp(ip);
     setServerPort(port || '30120');
   };
@@ -127,9 +183,9 @@ const App: React.FC = () => {
     setNotifications(prev => prev.filter(n => n.id !== id));
   };
 
-  const removeFromHistory = (historyItem: string) => {
+  const removeFromHistory = (historyItem: ServerHistoryItem) => {
     setServerHistory(prev => {
-      const newHistory = prev.filter(item => item !== historyItem);
+      const newHistory = prev.filter(item => item.address !== historyItem.address);
       localStorage.setItem('serverHistory', JSON.stringify(newHistory));
       return newHistory;
     });
@@ -139,6 +195,121 @@ const App: React.FC = () => {
     setServerHistory([]);
     localStorage.removeItem('serverHistory');
   };
+
+  const startEditingServer = (item: ServerHistoryItem) => {
+    setEditingServer(item);
+    setEditName(item.customName || '');
+    setEditLogo(item.logo || '');
+    // Detect logo type
+    if (item.logo) {
+      if (item.logo.startsWith('data:')) {
+        setLogoType('file');
+      } else {
+        setLogoType('url');
+      }
+    } else {
+      setLogoType('url');
+    }
+    setShowEditModal(true);
+  };
+
+  const saveServerEdit = () => {
+    if (!editingServer) return;
+
+    setServerHistory(prev => {
+      const newHistory = prev.map(item =>
+        item.address === editingServer.address
+          ? { ...item, customName: editName.trim() || undefined, logo: editLogo.trim() || undefined }
+          : item
+      );
+      localStorage.setItem('serverHistory', JSON.stringify(newHistory));
+      return newHistory;
+    });
+    cancelEdit();
+  };
+
+  const cancelEdit = () => {
+    setEditingServer(null);
+    setEditName('');
+    setEditLogo('');
+    setLogoType('url');
+    setShowEditModal(false);
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const result = e.target?.result as string;
+        setEditLogo(result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const copyPlayerData = () => {
+    if (!selectedPlayer) return;
+
+    const pingStatus = selectedPlayer.ping < 50 ? 'EXCELLENT' : 
+                      selectedPlayer.ping < 100 ? 'GOOD' : 'HIGH';
+
+    const playerData = `
+================================================================================
+                            FIVEM PLAYER REPORT
+================================================================================
+
+PLAYER INFORMATION
+├─ Name: ${selectedPlayer.name}
+├─ Player ID: ${selectedPlayer.id}
+├─ Ping: ${selectedPlayer.ping}ms (${pingStatus})${selectedPlayer.endpoint && !selectedPlayer.endpoint.startsWith('127.0.0.1') ? `
+├─ Endpoint: ${selectedPlayer.endpoint}` : ''}${selectedPlayer.discordId ? `
+└─ Discord ID: ${selectedPlayer.discordId}` : ''}
+
+SERVER INFORMATION
+├─ Server: ${serverIp}:${serverPort}
+├─ Timestamp: ${new Date().toLocaleString('th-TH')}
+└─ Generated by: FiveM Player Monitor (บาร็อง อิสหาด)
+
+================================================================================
+    `.trim();
+
+    navigator.clipboard.writeText(playerData).then(() => {
+      addNotification('success', 'คัดลอกข้อมูลผู้เล่นเรียบร้อยแล้ว');
+    }).catch(() => {
+      addNotification('error', 'ไม่สามารถคัดลอกข้อมูลได้');
+    });
+  };
+
+  // Generate SHA256 hash of player data
+  const generatePlayerDataHash = async (players: PlayerWithDiscord[]) => {
+    if (!players || players.length === 0) return '';
+    
+    try {
+      const playerDataString = JSON.stringify(
+        players.map(p => ({
+          id: p.id,
+          name: p.name,
+          ping: p.ping,
+          identifiers: p.identifiers,
+          endpoint: p.endpoint
+        })).sort((a, b) => a.id - b.id)
+      );
+      
+      const encoder = new TextEncoder();
+      const data = encoder.encode(playerDataString);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      
+      return hashHex.substring(0, 16); // Show first 16 characters
+    } catch (error) {
+      console.warn('Error generating hash:', error);
+      return '';
+    }
+  };
+
+  const [playerDataHash, setPlayerDataHash] = useState<string>('');
 
   useEffect(() => {
     const processPlayers = async () => {
@@ -229,6 +400,17 @@ const App: React.FC = () => {
   useEffect(() => {
     setCurrentPage(1);
   }, [searchName, searchId]);
+
+  // Generate hash when player data changes
+  useEffect(() => {
+    if (allPlayers.length > 0) {
+      generatePlayerDataHash(allPlayers).then(hash => {
+        setPlayerDataHash(hash);
+      });
+    } else {
+      setPlayerDataHash('');
+    }
+  }, [allPlayers]);
 
   // Function to change page and scroll to first player
   const changePage = (newPage: number) => {
@@ -421,6 +603,232 @@ const App: React.FC = () => {
     </div>
   );
 
+  // Edit Server Modal Component
+  const EditServerModal = () => (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md">
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-xl font-semibold text-slate-900 dark:text-white">
+              แก้ไขเซิร์ฟเวอร์
+            </h3>
+            <button
+              onClick={cancelEdit}
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            {/* Server Name */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                ชื่อเซิร์ฟเวอร์
+              </label>
+              <input
+                ref={nameInputRef}
+                key="server-name-input"
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder="เช่น Startown2.0, What City"
+                autoFocus
+                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg
+                         bg-white dark:bg-slate-700 text-slate-900 dark:text-white
+                         focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+
+            {/* Logo Type Selection */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                ประเภทโลโก้
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setLogoType('url')}
+                  className={`relative p-4 rounded-xl border-2 transition-all duration-200 ${logoType === 'url'
+                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                    : 'border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500'
+                    }`}
+                >
+                  <div className="flex flex-col items-center space-y-2">
+                    <div className={`p-2 rounded-lg ${logoType === 'url'
+                      ? 'bg-blue-100 dark:bg-blue-800'
+                      : 'bg-slate-100 dark:bg-slate-700'
+                      }`}>
+                      <svg className={`w-5 h-5 ${logoType === 'url'
+                        ? 'text-blue-600 dark:text-blue-400'
+                        : 'text-slate-500 dark:text-slate-400'
+                        }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                      </svg>
+                    </div>
+                    <div className="text-center">
+                      <div className={`font-medium text-sm ${logoType === 'url'
+                        ? 'text-blue-700 dark:text-blue-300'
+                        : 'text-slate-700 dark:text-slate-300'
+                        }`}>
+                        URL ลิงก์
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">
+                        ใช้ลิงก์รูปภาพ
+                      </div>
+                    </div>
+                  </div>
+                  {logoType === 'url' && (
+                    <div className="absolute -top-1 -right-1 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
+                      <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => setLogoType('file')}
+                  className={`relative p-4 rounded-xl border-2 transition-all duration-200 ${logoType === 'file'
+                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                    : 'border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500'
+                    }`}
+                >
+                  <div className="flex flex-col items-center space-y-2">
+                    <div className={`p-2 rounded-lg ${logoType === 'file'
+                      ? 'bg-blue-100 dark:bg-blue-800'
+                      : 'bg-slate-100 dark:bg-slate-700'
+                      }`}>
+                      <svg className={`w-5 h-5 ${logoType === 'file'
+                        ? 'text-blue-600 dark:text-blue-400'
+                        : 'text-slate-500 dark:text-slate-400'
+                        }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      </svg>
+                    </div>
+                    <div className="text-center">
+                      <div className={`font-medium text-sm ${logoType === 'file'
+                        ? 'text-blue-700 dark:text-blue-300'
+                        : 'text-slate-700 dark:text-slate-300'
+                        }`}>
+                        อัพโหลดไฟล์
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">
+                        เลือกไฟล์รูปภาพ
+                      </div>
+                    </div>
+                  </div>
+                  {logoType === 'file' && (
+                    <div className="absolute -top-1 -right-1 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
+                      <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Logo Input */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                โลโก้
+              </label>
+
+              {logoType === 'url' && (
+                <input
+                  key="logo-url-input"
+                  type="url"
+                  value={editLogo}
+                  onChange={(e) => setEditLogo(e.target.value)}
+                  placeholder="https://example.com/logo.png"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg
+                           bg-white dark:bg-slate-700 text-slate-900 dark:text-white
+                           focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              )}
+              {logoType === 'file' && (
+                <div className="space-y-2">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileUpload}
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg
+                             bg-white dark:bg-slate-700 text-slate-900 dark:text-white
+                             focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                  {editLogo && editLogo.startsWith('data:') && (
+                    <div className="flex justify-center">
+                      <img
+                        src={editLogo}
+                        alt="Preview"
+                        className="w-16 h-16 object-cover rounded-lg border border-slate-300 dark:border-slate-600"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Preview */}
+            {(editName || editLogo) && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  ตัวอย่าง
+                </label>
+                <div className="bg-slate-50 dark:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 p-3">
+                  <div className="flex items-center space-x-2">
+                    <div className="flex-shrink-0">
+                      {editLogo ? (
+                        <img
+                          src={editLogo}
+                          alt="Logo"
+                          className="w-6 h-6 object-cover rounded"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <span className="text-lg">🌐</span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-slate-900 dark:text-white truncate">
+                        {editName || editingServer?.address}
+                      </div>
+                      {editName && (
+                        <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                          {editingServer?.address}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Actions */}
+          <div className="flex space-x-3 mt-6">
+            <button
+              onClick={cancelEdit}
+              className="flex-1 bg-slate-500 hover:bg-slate-600 text-white font-medium py-2 px-4 rounded-lg"
+            >
+              ยกเลิก
+            </button>
+            <button
+              onClick={saveServerEdit}
+              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg"
+            >
+              บันทึก
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   // Settings Dropdown Component
   const SettingsDropdown = () => (
     <div className="absolute top-full right-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 z-50">
@@ -552,9 +960,12 @@ const App: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-3">
-              <h1 className="text-xl font-semibold text-slate-900 dark:text-white">
-                FiveM Player Monitor By บาร็อง อิสหาด
+              <h1 className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-white">
+                เช็คผู้เล่น FiveM
               </h1>
+              <span className="hidden sm:inline text-sm text-slate-500 dark:text-slate-400">
+                by บาร็อง อิสหาด
+              </span>
             </div>
 
             <div className="flex items-center relative" data-settings-dropdown>
@@ -573,21 +984,21 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 lg:gap-8">
 
           {/* Sidebar */}
-          <div className="lg:col-span-4 space-y-6">
+          <div className="lg:col-span-4 space-y-4 sm:space-y-6">
             {/* Server Connection */}
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 sm:p-6">
               <h2 className="text-lg font-medium text-slate-900 dark:text-white mb-4">
-                Server Connection
+                เชื่อมต่อเซิร์ฟเวอร์
               </h2>
 
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Server Address
+                    ที่อยู่เซิร์ฟเวอร์
                   </label>
                   <input
                     type="text"
@@ -605,7 +1016,7 @@ const App: React.FC = () => {
 
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Port
+                    พอร์ต
                   </label>
                   <input
                     type="number"
@@ -627,7 +1038,7 @@ const App: React.FC = () => {
                   className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-4 
                            rounded-lg focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                 >
-                  Connect to Server
+                  ดึงข้อมูล
                 </button>
 
                 {/* Server History */}
@@ -635,36 +1046,78 @@ const App: React.FC = () => {
                   <div className="mt-4">
                     <div className="flex items-center justify-between mb-2">
                       <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                        📋 Recent Servers
+                        📋 เซิร์ฟเวอร์ล่าสุด
                       </label>
                       <button
                         onClick={clearAllHistory}
                         className="text-xs text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
                       >
-                        Clear All
+                        ลบทั้งหมด
                       </button>
                     </div>
-                    <div className="space-y-1">
+                    <div className="space-y-2">
                       {serverHistory.map((historyItem, index) => (
                         <div
                           key={index}
-                          className="flex items-center space-x-2 bg-slate-50 dark:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600"
+                          className="bg-slate-50 dark:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600"
                         >
-                          <button
-                            onClick={() => selectFromHistory(historyItem)}
-                            className="flex-1 text-left px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-600 rounded-l-lg
-                                     text-slate-700 dark:text-slate-300"
-                          >
-                            🌐 {historyItem}
-                          </button>
-                          <button
-                            onClick={() => removeFromHistory(historyItem)}
-                            className="px-2 py-2 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900 rounded-r-lg"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
+                          <div className="flex items-center">
+                            <button
+                              onClick={() => selectFromHistory(historyItem)}
+                              className="flex-1 flex items-center space-x-3 px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-600 rounded-l-lg
+                                       text-slate-700 dark:text-slate-300"
+                            >
+                              <div className="flex-shrink-0">
+                                {historyItem.logo ? (
+                                  historyItem.logo.startsWith('http') || historyItem.logo.startsWith('data:') ? (
+                                    <img
+                                      src={historyItem.logo}
+                                      alt="Server Logo"
+                                      className="w-6 h-6 object-cover rounded"
+                                      onError={(e) => {
+                                        e.currentTarget.style.display = 'none';
+                                        const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                                        if (fallback) fallback.style.display = 'inline';
+                                      }}
+                                    />
+                                  ) : (
+                                    <span className="text-lg">{historyItem.logo}</span>
+                                  )
+                                ) : (
+                                  <span className="text-lg">🌐</span>
+                                )}
+                                <span className="text-lg hidden">🌐</span>
+                              </div>
+                              <div className="flex-1 text-left min-w-0">
+                                <div className="font-medium truncate">
+                                  {historyItem.customName || historyItem.address}
+                                </div>
+                                {historyItem.customName && (
+                                  <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                                    {historyItem.address}
+                                  </div>
+                                )}
+                              </div>
+                            </button>
+                            <button
+                              onClick={() => startEditingServer(historyItem)}
+                              className="px-2 py-2 text-blue-500 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900"
+                              title="แก้ไขชื่อและโลโก้"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => removeFromHistory(historyItem)}
+                              className="px-2 py-2 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900 rounded-r-lg"
+                              title="ลบออกจากรายการ"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -674,22 +1127,35 @@ const App: React.FC = () => {
             </div>
 
             {/* Server Info */}
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 sm:p-6">
               <h3 className="text-lg font-medium text-slate-900 dark:text-white mb-4">
-                Server Information
+                ข้อมูลเซิร์ฟเวอร์
               </h3>
               <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-4 max-h-64 overflow-y-auto hide-scrollbar">
                 <pre className="text-xs text-slate-600 dark:text-slate-400 whitespace-pre-wrap">
-                  {serverData?.dynamic ? JSON.stringify(serverData.dynamic, null, 2) : 'No data available'}
+                  {serverData?.dynamic ? JSON.stringify(serverData.dynamic, null, 2) : 'ไม่มีข้อมูล'}
                 </pre>
               </div>
             </div>
 
             {/* Player Details */}
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
-              <h3 className="text-lg font-medium text-slate-900 dark:text-white mb-4">
-                Player Details
-              </h3>
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 sm:p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-medium text-slate-900 dark:text-white">
+                  รายละเอียดผู้เล่น
+                </h3>
+                {selectedPlayer && (
+                  <button
+                    onClick={copyPlayerData}
+                    className="p-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-300 dark:hover:bg-slate-700 transition-colors"
+                    title="คัดลอกข้อมูลผู้เล่น"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                  </button>
+                )}
+              </div>
               {selectedPlayer ? (
                 <div className="space-y-4">
                   {selectedPlayer.discordAvatar && (
@@ -748,12 +1214,36 @@ const App: React.FC = () => {
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
               <div className="p-6 border-b border-slate-200 dark:border-slate-700" data-section="online-players">
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-medium text-slate-900 dark:text-white flex items-center">
-                    Online Players
-                    {isLoadingPlayers && (
-                      <div className="ml-2 w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                  <div className="flex flex-col">
+                    <h2 className="text-lg font-medium text-slate-900 dark:text-white flex items-center">
+                      Online Players
+                      {isLoadingPlayers && (
+                        <div className="ml-2 w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                      )}
+                    </h2>
+                    {playerDataHash && (
+                      <div className="flex items-center mt-1">
+                        <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">
+                          SHA256: {playerDataHash}
+                        </span>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(playerDataHash).then(() => {
+                              addNotification('success', 'คัดลอก SHA256 hash เรียบร้อยแล้ว');
+                            }).catch(() => {
+                              addNotification('error', 'ไม่สามารถคัดลอก hash ได้');
+                            });
+                          }}
+                          className="ml-2 p-1 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                          title="คัดลอก SHA256 hash"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
+                        </button>
+                      </div>
                     )}
-                  </h2>
+                  </div>
                   {filteredPlayers.length > 0 && (
                     <span className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-sm font-medium px-2.5 py-0.5 rounded-full">
                       {filteredPlayers.length} / {serverData?.players.length || 0}
@@ -955,6 +1445,8 @@ const App: React.FC = () => {
       {showLoading && <LoadingIndicator />}
       <NotificationList />
 
+      {/* Edit Server Modal */}
+      {showEditModal && <EditServerModal />}
 
     </div>
   );
