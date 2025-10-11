@@ -447,7 +447,7 @@ SERVER INFORMATION
 
   const fetchServerData = async () => {
     if (!serverIp.trim()) {
-      addNotification('error', 'Please enter server IP or domain');
+      addNotification('error', 'กรุณาใส่ IP หรือ Domain ของเซิร์ฟเวอร์');
       return;
     }
 
@@ -455,58 +455,87 @@ SERVER INFORMATION
     setShowLoading(true);
 
     try {
+      const serverAddress = `${serverIp}:${serverPort}`;
+      
+      // Fetch server information first
       const corsProxies = [
         'https://corsproxy.io/?',
-        'https://api.allorigins.win/raw?url=',
-        'https://cors-anywhere.herokuapp.com/'
+        'https://api.allorigins.win/raw?url='
       ];
 
-      const targetUrl = `https://itools.zone/fivem/?ip_address=${encodeURIComponent(serverIp)}&port=${encodeURIComponent(serverPort)}`;
+      let serverInfo = null;
+      let players = [];
 
-      let response: Response | null = null;
-      let lastError: Error | null = null;
-
+      // Try to get server information
       for (const corsProxy of corsProxies) {
         try {
-          const proxyUrl = corsProxy.includes('allorigins')
-            ? `${corsProxy}${encodeURIComponent(targetUrl)}`
-            : `${corsProxy}${targetUrl}`;
-
-          response = await fetch(proxyUrl, {
-            method: 'GET',
+          const infoUrl = corsProxy + encodeURIComponent('https://fivem-id.com/information');
+          
+          const infoResponse = await fetch(infoUrl, {
+            method: 'POST',
             headers: {
-              'Accept': 'application/json',
+              'Accept': 'application/json, text/javascript, */*; q=0.01',
+              'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+              'Origin': 'https://fivem-id.com',
+              'Referer': 'https://fivem-id.com/',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'
             },
-            signal: AbortSignal.timeout(10000)
+            body: `server=${encodeURIComponent(serverAddress)}`,
+            signal: AbortSignal.timeout(15000)
           });
 
-          if (response.ok) {
+          if (infoResponse.ok) {
+            serverInfo = await infoResponse.json();
             break;
           }
         } catch (error) {
-          lastError = error as Error;
-          console.warn(`CORS proxy ${corsProxy} failed:`, error);
+          console.warn(`Failed to get server info via ${corsProxy}:`, error);
           continue;
         }
       }
 
-      if (!response || !response.ok) {
-        throw lastError || new Error('All CORS proxies failed');
+      // Try to get players data
+      for (const corsProxy of corsProxies) {
+        try {
+          const playersUrl = corsProxy + encodeURIComponent('https://fivem-id.com/ajax');
+          
+          const playersResponse = await fetch(playersUrl, {
+            method: 'POST',
+            headers: {
+              'Accept': 'application/json, text/javascript, */*; q=0.01',
+              'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+              'Origin': 'https://fivem-id.com',
+              'Referer': 'https://fivem-id.com/',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'
+            },
+            body: `server=${encodeURIComponent(serverAddress)}`,
+            signal: AbortSignal.timeout(15000)
+          });
+
+          if (playersResponse.ok) {
+            const playersData = await playersResponse.json();
+            if (Array.isArray(playersData)) {
+              players = playersData;
+            }
+            break;
+          }
+        } catch (error) {
+          console.warn(`Failed to get players via ${corsProxy}:`, error);
+          continue;
+        }
       }
 
-      const data = await response.json();
+      // Create combined data structure
+      const combinedData = {
+        dynamic: serverInfo || {
+          hostname: 'Unknown Server',
+          clients: players.length,
+          sv_maxclients: 'Unknown'
+        },
+        players: players
+      };
 
-      // Check if response contains error
-      if (data.error) {
-        throw new Error(data.error);
-      }
-
-      // Check if data has expected structure
-      if (!data.players || !Array.isArray(data.players)) {
-        throw new Error('Invalid server response format');
-      }
-
-      setServerData(data);
+      setServerData(combinedData);
       setSelectedPlayer(null);
 
       // Add to server history
@@ -514,7 +543,7 @@ SERVER INFORMATION
 
       // Hide loading and show success notification
       setShowLoading(false);
-      addNotification('success', `Successfully connected! Found ${data.players.length} players online`);
+      addNotification('success', `เชื่อมต่อสำเร็จ! พบผู้เล่นออนไลน์ ${players.length} คน`);
 
     } catch (error) {
       console.error('Error fetching server data:', error);
