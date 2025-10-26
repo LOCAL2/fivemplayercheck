@@ -1,22 +1,22 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogActions, 
-  Button, 
-  TextField, 
-  Box, 
-  Typography, 
-  IconButton, 
+import {
+  Dialog,
+  DialogContent,
+  DialogActions,
+  Button,
+  TextField,
+  Box,
+  Typography,
+  IconButton,
   Chip,
   Tooltip,
   Paper,
   ThemeProvider,
   createTheme
 } from '@mui/material';
-import { 
-  Share as ShareIcon, 
-  ContentCopy as CopyIcon, 
+import {
+  Share as ShareIcon,
+  ContentCopy as CopyIcon,
   Close as CloseIcon,
   Link as LinkIcon
 } from '@mui/icons-material';
@@ -89,13 +89,14 @@ const App: React.FC = () => {
   const [editLogo, setEditLogo] = useState('');
   const [logoType, setLogoType] = useState<'url' | 'file'>('url');
   const nameInputRef = useRef<HTMLInputElement>(null);
-  
+
   // Share Link Feature States
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
   const [customShareName, setCustomShareName] = useState('');
   const [isSharedLink, setIsSharedLink] = useState(false);
   const [sharedFromUser, setSharedFromUser] = useState('');
+  const [isGeneratingUrl, setIsGeneratingUrl] = useState(false);
 
   // Material-UI Theme
   const muiTheme = createTheme({
@@ -142,11 +143,11 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    
+
     // Check for new format first (encoded)
     const serverParam = urlParams.get('s');
     const sharedByParam = urlParams.get('by');
-    
+
     // Check for old format (backward compatibility)
     const ipParam = urlParams.get('ip_address');
     const portParam = urlParams.get('port');
@@ -190,7 +191,7 @@ const App: React.FC = () => {
 
     // Set initial theme to dark by default
     const savedTheme = localStorage.getItem('theme') || 'dark';
-    
+
     // Apply theme immediately
     document.documentElement.setAttribute('data-theme', savedTheme);
     if (savedTheme === 'dark') {
@@ -200,7 +201,7 @@ const App: React.FC = () => {
       document.documentElement.classList.remove('dark');
       document.body.classList.remove('dark');
     }
-    
+
     setCurrentTheme(savedTheme);
     console.log('Initial theme loaded:', savedTheme);
 
@@ -227,10 +228,29 @@ const App: React.FC = () => {
     console.log('State updated - serverIp:', serverIp, 'serverPort:', serverPort);
   }, [serverIp, serverPort]);
 
+  // Auto-generate share URL when dialog is open and inputs change
+  // Debounced effect for generating share URL
+  useEffect(() => {
+    if (!showShareDialog) return;
+
+    setIsGeneratingUrl(true);
+    const timeoutId = setTimeout(() => {
+      if (serverIp.trim() || window.location.search) {
+        generateShareUrlSilent();
+      }
+      setIsGeneratingUrl(false);
+    }, 300); // 300ms debounce
+
+    return () => {
+      clearTimeout(timeoutId);
+      setIsGeneratingUrl(false);
+    };
+  }, [showShareDialog, customShareName, sharedFromUser, serverIp, serverPort]);
+
   const changeTheme = (theme: string) => {
     // Update HTML attributes
     document.documentElement.setAttribute('data-theme', theme);
-    
+
     // Update classes properly
     if (theme === 'dark') {
       document.documentElement.classList.add('dark');
@@ -239,11 +259,11 @@ const App: React.FC = () => {
       document.documentElement.classList.remove('dark');
       document.body.classList.remove('dark');
     }
-    
+
     // Save to localStorage
     localStorage.setItem('theme', theme);
     setCurrentTheme(theme);
-    
+
     // Force a small delay to ensure DOM updates
     setTimeout(() => {
       console.log('Theme changed to:', theme);
@@ -364,8 +384,8 @@ const App: React.FC = () => {
   const copyPlayerData = () => {
     if (!selectedPlayer) return;
 
-    const pingStatus = selectedPlayer.ping < 50 ? 'EXCELLENT' : 
-                      selectedPlayer.ping < 100 ? 'GOOD' : 'HIGH';
+    const pingStatus = selectedPlayer.ping < 50 ? 'EXCELLENT' :
+      selectedPlayer.ping < 100 ? 'GOOD' : 'HIGH';
 
     const playerData = `
 ================================================================================
@@ -414,12 +434,12 @@ SERVER INFORMATION
       let restored = encoded.replace(/[-_]/g, (match) => {
         return match === '-' ? '+' : '/';
       });
-      
+
       // Add padding if needed
       while (restored.length % 4) {
         restored += '=';
       }
-      
+
       const decoded = atob(restored);
       return JSON.parse(decoded);
     } catch (error) {
@@ -429,23 +449,20 @@ SERVER INFORMATION
   };
 
   // Share Link Functions
-  const generateShareUrl = () => {
-    console.log('generateShareUrl called, serverIp:', serverIp, 'serverPort:', serverPort);
-    
+  const generateShareUrlSilent = () => {
     // Check if serverIp is empty, try to get from URL params as fallback
     let currentServerIp = serverIp.trim();
     let currentServerPort = serverPort;
-    
+
     if (!currentServerIp) {
       const urlParams = new URLSearchParams(window.location.search);
       const ipParam = urlParams.get('ip_address');
       const portParam = urlParams.get('port');
       const serverParam = urlParams.get('s');
-      
+
       if (ipParam) {
         currentServerIp = ipParam;
         currentServerPort = portParam || '30120';
-        console.log('Using URL params as fallback:', currentServerIp, currentServerPort);
       } else if (serverParam) {
         const decoded = decodeServerData(serverParam);
         if (decoded) {
@@ -453,22 +470,34 @@ SERVER INFORMATION
           currentServerPort = decoded.port;
         }
       }
-      
+
       if (!currentServerIp) {
-        addNotification('error', 'กรุณาใส่ที่อยู่เซิร์ฟเวอร์ก่อน');
+        setShareUrl('');
         return;
       }
     }
 
     const baseUrl = window.location.origin + window.location.pathname;
     const encoded = encodeServerData(currentServerIp, currentServerPort, customShareName.trim() || undefined);
-    
+
     let url = `${baseUrl}?s=${encoded}`;
     if (sharedFromUser.trim()) {
       url += `&by=${encodeURIComponent(sharedFromUser.trim())}`;
     }
-    
+
     setShareUrl(url);
+  };
+
+  const generateShareUrl = () => {
+    console.log('generateShareUrl called, serverIp:', serverIp, 'serverPort:', serverPort);
+
+    // Check if we have server data
+    if (!serverIp.trim() && !window.location.search) {
+      addNotification('error', 'กรุณาใส่ที่อยู่เซิร์ฟเวอร์ก่อน');
+      return;
+    }
+
+    // Show dialog (useEffect will handle URL generation)
     setShowShareDialog(true);
   };
 
@@ -490,7 +519,7 @@ SERVER INFORMATION
   // Generate SHA256 hash of player data
   const generatePlayerDataHash = async (players: PlayerWithDiscord[]) => {
     if (!players || players.length === 0) return '';
-    
+
     try {
       const playerDataString = JSON.stringify(
         players.map(p => ({
@@ -501,13 +530,13 @@ SERVER INFORMATION
           endpoint: p.endpoint
         })).sort((a, b) => a.id - b.id)
       );
-      
+
       const encoder = new TextEncoder();
       const data = encoder.encode(playerDataString);
       const hashBuffer = await crypto.subtle.digest('SHA-256', data);
       const hashArray = Array.from(new Uint8Array(hashBuffer));
       const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-      
+
       return hashHex.substring(0, 16); // Show first 16 characters
     } catch (error) {
       console.warn('Error generating hash:', error);
@@ -633,7 +662,7 @@ SERVER INFORMATION
           tableHeader.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
       }
-    }, 150); 
+    }, 150);
   };
 
   useEffect(() => {
@@ -670,7 +699,7 @@ SERVER INFORMATION
       for (const corsProxy of corsProxies) {
         try {
           const infoUrl = corsProxy + encodeURIComponent('https://fivem-id.com/information');
-          
+
           const infoResponse = await fetch(infoUrl, {
             method: 'POST',
             headers: {
@@ -698,7 +727,7 @@ SERVER INFORMATION
       for (const corsProxy of corsProxies) {
         try {
           const playersUrl = corsProxy + encodeURIComponent('https://fivem-id.com/ajax');
-          
+
           const playersResponse = await fetch(playersUrl, {
             method: 'POST',
             headers: {
@@ -792,7 +821,7 @@ SERVER INFORMATION
       for (const corsProxy of corsProxies) {
         try {
           const infoUrl = corsProxy + encodeURIComponent('https://fivem-id.com/information');
-          
+
           const infoResponse = await fetch(infoUrl, {
             method: 'POST',
             headers: {
@@ -820,7 +849,7 @@ SERVER INFORMATION
       for (const corsProxy of corsProxies) {
         try {
           const playersUrl = corsProxy + encodeURIComponent('https://fivem-id.com/ajax');
-          
+
           const playersResponse = await fetch(playersUrl, {
             method: 'POST',
             headers: {
@@ -1307,822 +1336,823 @@ SERVER INFORMATION
   return (
     <ThemeProvider theme={muiTheme}>
       <div className="min-h-screen bg-slate-50 dark:bg-slate-900 hide-scrollbar">
-      
-      {/* Welcome Banner for Shared Links */}
-      {isSharedLink && (
-        <div className="bg-gradient-to-r from-blue-600 to-green-600 text-white">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <div className="flex-shrink-0">
-                  <ShareIcon sx={{ fontSize: 20 }} />
-                </div>
-                <div>
-                  <p className="text-sm font-medium">
-                    คุณได้รับลิงก์แชร์เซิร์ฟเวอร์ FiveM!
-                  </p>
-                  {sharedFromUser && (
-                    <p className="text-xs opacity-90">
-                      แชร์โดย: {sharedFromUser}
+
+        {/* Welcome Banner for Shared Links */}
+        {isSharedLink && (
+          <div className="bg-gradient-to-r from-blue-600 to-green-600 text-white">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="flex-shrink-0">
+                    <ShareIcon sx={{ fontSize: 20 }} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">
+                      คุณได้รับลิงก์แชร์เซิร์ฟเวอร์ FiveM!
                     </p>
-                  )}
-                </div>
-              </div>
-              <button
-                onClick={() => setIsSharedLink(false)}
-                className="text-white/80 hover:text-white transition-colors"
-              >
-                <CloseIcon sx={{ fontSize: 18 }} />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Header */}
-      <header className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center space-x-3">
-              <h1 className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-white">
-                เช็คผู้เล่น FiveM
-              </h1>
-              <span className="hidden sm:inline text-sm text-slate-500 dark:text-slate-400">
-                by บาร็อง อิสหาด
-              </span>
-            </div>
-
-            <div className="flex items-center relative" data-settings-dropdown>
-              <button
-                onClick={() => setShowSettingsModal(!showSettingsModal)}
-                className="p-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-300 dark:hover:bg-slate-700"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-              </button>
-              {showSettingsModal && <SettingsDropdown />}
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 lg:gap-8">
-
-          {/* Sidebar */}
-          <div className="lg:col-span-4 space-y-4 sm:space-y-6">
-            {/* Server Connection */}
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 sm:p-6">
-              <h2 className="text-lg font-medium text-slate-900 dark:text-white mb-4">
-                เชื่อมต่อเซิร์ฟเวอร์
-              </h2>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    ที่อยู่เซิร์ฟเวอร์
-                  </label>
-                  <input
-                    type="text"
-                    value={serverIp}
-                    onChange={(e) => setServerIp(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && fetchServerData()}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg 
-                             bg-white dark:bg-slate-700 text-slate-900 dark:text-white
-                             focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                             placeholder-slate-400 dark:placeholder-slate-500"
-                    placeholder="เช่น play.st20.app or 127.0.0.1"
-                    autoFocus
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    พอร์ต
-                  </label>
-                  <input
-                    type="number"
-                    value={serverPort}
-                    onChange={(e) => setServerPort(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && fetchServerData()}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg 
-                             bg-white dark:bg-slate-700 text-slate-900 dark:text-white
-                             focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                             placeholder-slate-400 dark:placeholder-slate-500"
-                    placeholder="30120"
-                    min="1"
-                    max="65535"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    onClick={fetchServerData}
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-4 
-                             rounded-lg focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
-                  >
-                    ดึงข้อมูล
-                  </button>
-                  <button
-                    onClick={generateShareUrl}
-                    className="bg-green-600 hover:bg-green-700 text-white font-medium py-2.5 px-4 
-                             rounded-lg focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors
-                             flex items-center justify-center space-x-2"
-                  >
-                    <ShareIcon sx={{ fontSize: 18 }} />
-                    <span>แชร์</span>
-                  </button>
-                </div>
-
-                {/* Server History */}
-                {serverHistory.length > 0 && (
-                  <div className="mt-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                        📋 เซิร์ฟเวอร์ล่าสุด
-                      </label>
-                      <button
-                        onClick={clearAllHistory}
-                        className="text-xs text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                      >
-                        ลบทั้งหมด
-                      </button>
-                    </div>
-                    <div className="space-y-2">
-                      {serverHistory.map((historyItem, index) => (
-                        <div
-                          key={index}
-                          className="bg-slate-50 dark:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600"
-                        >
-                          <div className="flex items-center">
-                            <button
-                              onClick={() => selectFromHistory(historyItem)}
-                              className="flex-1 flex items-center space-x-3 px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-600 rounded-l-lg
-                                       text-slate-700 dark:text-slate-300"
-                            >
-                              <div className="flex-shrink-0">
-                                {historyItem.logo ? (
-                                  historyItem.logo.startsWith('http') || historyItem.logo.startsWith('data:') ? (
-                                    <img
-                                      src={historyItem.logo}
-                                      alt="Server Logo"
-                                      className="w-6 h-6 object-cover rounded"
-                                      onError={(e) => {
-                                        e.currentTarget.style.display = 'none';
-                                        const fallback = e.currentTarget.nextElementSibling as HTMLElement;
-                                        if (fallback) fallback.style.display = 'inline';
-                                      }}
-                                    />
-                                  ) : (
-                                    <span className="text-lg">{historyItem.logo}</span>
-                                  )
-                                ) : (
-                                  <span className="text-lg">🌐</span>
-                                )}
-                                <span className="text-lg hidden">🌐</span>
-                              </div>
-                              <div className="flex-1 text-left min-w-0">
-                                <div className="font-medium truncate">
-                                  {historyItem.customName || historyItem.address}
-                                </div>
-                                {historyItem.customName && (
-                                  <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                                    {historyItem.address}
-                                  </div>
-                                )}
-                              </div>
-                            </button>
-                            <button
-                              onClick={() => startEditingServer(historyItem)}
-                              className="px-2 py-2 text-blue-500 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900"
-                              title="แก้ไขชื่อและโลโก้"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                              </svg>
-                            </button>
-                            <button
-                              onClick={() => removeFromHistory(historyItem)}
-                              className="px-2 py-2 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900 rounded-r-lg"
-                              title="ลบออกจากรายการ"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                              </svg>
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Server Info */}
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 sm:p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-medium text-slate-900 dark:text-white">
-                  ข้อมูลเซิร์ฟเวอร์
-                </h3>
-                {serverData && (
-                  <Tooltip title="แชร์ข้อมูลเซิร์ฟเวอร์นี้">
-                    <IconButton 
-                      onClick={generateShareUrl}
-                      size="small"
-                      sx={{ 
-                        color: '#10b981',
-                        '&:hover': { 
-                          bgcolor: currentTheme === 'dark' ? '#065f46' : '#d1fae5' 
-                        }
-                      }}
-                    >
-                      <ShareIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                )}
-              </div>
-              <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-4 max-h-64 overflow-y-auto hide-scrollbar">
-                <pre className="text-xs text-slate-600 dark:text-slate-400 whitespace-pre-wrap">
-                  {serverData?.dynamic ? JSON.stringify(serverData.dynamic, null, 2) : 'ไม่มีข้อมูล'}
-                </pre>
-              </div>
-            </div>
-
-            {/* Player Details */}
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 sm:p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-medium text-slate-900 dark:text-white">
-                  รายละเอียดผู้เล่น
-                </h3>
-                {selectedPlayer && (
-                  <button
-                    onClick={copyPlayerData}
-                    className="p-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-300 dark:hover:bg-slate-700 transition-colors"
-                    title="คัดลอกข้อมูลผู้เล่น"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                  </button>
-                )}
-              </div>
-              {selectedPlayer ? (
-                <div className="space-y-4">
-                  {selectedPlayer.discordAvatar && (
-                    <div className="flex justify-center">
-                      <img
-                        src={selectedPlayer.discordAvatar}
-                        alt="Discord Avatar"
-                        className="w-16 h-16 rounded-full border-2 border-slate-200 dark:border-slate-600"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                        }}
-                      />
-                    </div>
-                  )}
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-slate-500 dark:text-slate-400">ID:</span>
-                      <span className="font-medium text-slate-900 dark:text-white">{selectedPlayer.id}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500 dark:text-slate-400">Name:</span>
-                      <span className="font-medium text-slate-900 dark:text-white">{selectedPlayer.name}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500 dark:text-slate-400">Ping:</span>
-                      <span className={`font-medium ${selectedPlayer.ping < 50 ? 'text-green-600' :
-                        selectedPlayer.ping < 100 ? 'text-yellow-600' : 'text-red-600'
-                        }`}>
-                        {selectedPlayer.ping}ms
-                      </span>
-                    </div>
-                    {selectedPlayer.endpoint && !selectedPlayer.endpoint.startsWith('127.0.0.1') && (
-                      <div className="flex justify-between">
-                        <span className="text-slate-500 dark:text-slate-400">Endpoint:</span>
-                        <span className="font-mono text-xs text-slate-900 dark:text-white">{selectedPlayer.endpoint}</span>
-                      </div>
-                    )}
-                    {selectedPlayer.discordId && (
-                      <div className="flex justify-between">
-                        <span className="text-slate-500 dark:text-slate-400">Discord:</span>
-                        <span className="font-mono text-xs text-slate-900 dark:text-white">{selectedPlayer.discordId}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <p className="text-slate-500 dark:text-slate-400 text-sm">
-                  Click on a player to view details
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* Main Content */}
-          <div className="lg:col-span-8">
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
-              <div className="p-6 border-b border-slate-200 dark:border-slate-700" data-section="online-players">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex flex-col">
-                    <h2 className="text-lg font-medium text-slate-900 dark:text-white flex items-center">
-                      {customShareName ? customShareName : 'Online Players'}
-                      {isLoadingPlayers && (
-                        <div className="ml-2 w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                      )}
-                    </h2>
-                    {customShareName && (
-                      <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                        {serverIp}:{serverPort}
+                    {sharedFromUser && (
+                      <p className="text-xs opacity-90">
+                        แชร์โดย: {sharedFromUser}
                       </p>
                     )}
-                    {playerDataHash && (
-                      <div className="flex items-center mt-1">
-                        <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">
-                          SHA256: {playerDataHash}
-                        </span>
-                        <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(playerDataHash).then(() => {
-                              addNotification('success', 'คัดลอก SHA256 hash เรียบร้อยแล้ว');
-                            }).catch(() => {
-                              addNotification('error', 'ไม่สามารถคัดลอก hash ได้');
-                            });
-                          }}
-                          className="ml-2 p-1 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-                          title="คัดลอก SHA256 hash"
-                        >
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                          </svg>
-                        </button>
-                      </div>
-                    )}
                   </div>
-                  {filteredPlayers.length > 0 && (
-                    <span className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-sm font-medium px-2.5 py-0.5 rounded-full">
-                      {filteredPlayers.length} / {serverData?.players.length || 0}
-                    </span>
-                  )}
                 </div>
+                <button
+                  onClick={() => setIsSharedLink(false)}
+                  className="text-white/80 hover:text-white transition-colors"
+                >
+                  <CloseIcon sx={{ fontSize: 18 }} />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={searchName}
-                      onChange={(e) => setSearchName(e.target.value)}
-                      className="w-full pl-10 pr-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg 
-                               bg-white dark:bg-slate-700 text-slate-900 dark:text-white
-                               focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                               placeholder-slate-400 dark:placeholder-slate-500"
-                      placeholder="Search by name..."
-                    />
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <svg className="h-4 w-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                      </svg>
-                    </div>
-                  </div>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={searchId}
-                      onChange={(e) => setSearchId(e.target.value)}
-                      className="w-full pl-10 pr-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg 
-                               bg-white dark:bg-slate-700 text-slate-900 dark:text-white
-                               focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                               placeholder-slate-400 dark:placeholder-slate-500"
-                      placeholder="Search by ID..."
-                    />
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <span className="text-slate-400 font-mono text-sm">#</span>
-                    </div>
-                  </div>
-                </div>
+        {/* Header */}
+        <header className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center h-16">
+              <div className="flex items-center space-x-3">
+                <h1 className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-white">
+                  เช็คผู้เล่น FiveM
+                </h1>
+                <span className="hidden sm:inline text-sm text-slate-500 dark:text-slate-400">
+                  by บาร็อง อิสหาด
+                </span>
               </div>
 
-              <div className="overflow-hidden">
-                <div className="max-h-[600px] overflow-y-auto hide-scrollbar">
-                  <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700" data-player-table>
-                    <thead className="bg-slate-50 dark:bg-slate-900 sticky top-0">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                          Player
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                          ID
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                          Ping
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700">
-                      {paginatedPlayers.length > 0 ? (
-                        paginatedPlayers.map((player) => (
-                          <tr
-                            key={player.id}
-                            onClick={() => handlePlayerClick(player)}
-                            className={`cursor-pointer transition-colors ${selectedPlayer?.id === player.id
-                              ? 'bg-blue-100 dark:bg-blue-900 border-l-4 border-blue-500'
-                              : 'hover:bg-slate-50 dark:hover:bg-slate-700'
-                              }`}
+              <div className="flex items-center relative" data-settings-dropdown>
+                <button
+                  onClick={() => setShowSettingsModal(!showSettingsModal)}
+                  className="p-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-300 dark:hover:bg-slate-700"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                </button>
+                {showSettingsModal && <SettingsDropdown />}
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 lg:gap-8">
+
+            {/* Sidebar */}
+            <div className="lg:col-span-4 space-y-4 sm:space-y-6">
+              {/* Server Connection */}
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 sm:p-6">
+                <h2 className="text-lg font-medium text-slate-900 dark:text-white mb-4">
+                  เชื่อมต่อเซิร์ฟเวอร์
+                </h2>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      ที่อยู่เซิร์ฟเวอร์
+                    </label>
+                    <input
+                      type="text"
+                      value={serverIp}
+                      onChange={(e) => setServerIp(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && fetchServerData()}
+                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg 
+                             bg-white dark:bg-slate-700 text-slate-900 dark:text-white
+                             focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                             placeholder-slate-400 dark:placeholder-slate-500"
+                      placeholder="เช่น play.st20.app or 127.0.0.1"
+                      autoFocus
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      พอร์ต
+                    </label>
+                    <input
+                      type="number"
+                      value={serverPort}
+                      onChange={(e) => setServerPort(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && fetchServerData()}
+                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg 
+                             bg-white dark:bg-slate-700 text-slate-900 dark:text-white
+                             focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                             placeholder-slate-400 dark:placeholder-slate-500"
+                      placeholder="30120"
+                      min="1"
+                      max="65535"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={fetchServerData}
+                      className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-4 
+                             rounded-lg focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+                    >
+                      ดึงข้อมูล
+                    </button>
+                    <button
+                      onClick={generateShareUrl}
+                      className="bg-green-600 hover:bg-green-700 text-white font-medium py-2.5 px-4 
+                             rounded-lg focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors
+                             flex items-center justify-center space-x-2"
+                    >
+                      <ShareIcon sx={{ fontSize: 18 }} />
+                      <span>แชร์</span>
+                    </button>
+                  </div>
+
+                  {/* Server History */}
+                  {serverHistory.length > 0 && (
+                    <div className="mt-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                          📋 เซิร์ฟเวอร์ล่าสุด
+                        </label>
+                        <button
+                          onClick={clearAllHistory}
+                          className="text-xs text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                        >
+                          ลบทั้งหมด
+                        </button>
+                      </div>
+                      <div className="space-y-2">
+                        {serverHistory.map((historyItem, index) => (
+                          <div
+                            key={index}
+                            className="bg-slate-50 dark:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600"
                           >
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="flex items-center">
-                                <div className="flex-shrink-0 h-8 w-8">
-                                  {player.discordAvatar ? (
-                                    <img
-                                      className="h-8 w-8 rounded-full"
-                                      src={player.discordAvatar}
-                                      alt=""
-                                      onError={(e) => {
-                                        e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMTYiIGN5PSIxNiIgcj0iMTYiIGZpbGw9IiNEMUQ1REIiLz4KPHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB4PSI4IiB5PSI4Ij4KPHBhdGggZD0iTTggMTJDMTAuMjA5MSAxMiAxMiAxMC4yMDkxIDEyIDhDMTIgNS43OTA5IDEwLjIwOTEgNCA4IDRDNS43OTA5IDQgNCA1Ljc5MDkgNCA4QzQgMTAuMjA5MSA1Ljc5MDkgMTIgOCAxMloiIGZpbGw9IiM2QjcyODAiLz4KPC9zdmc+Cjwvc3ZnPgo=';
-                                      }}
-                                    />
-                                  ) : player.discordId ? (
-                                    <div className="h-8 w-8 rounded-full bg-slate-200 dark:bg-slate-600 flex items-center justify-center">
-                                      <div className="w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></div>
-                                    </div>
+                            <div className="flex items-center">
+                              <button
+                                onClick={() => selectFromHistory(historyItem)}
+                                className="flex-1 flex items-center space-x-3 px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-600 rounded-l-lg
+                                       text-slate-700 dark:text-slate-300"
+                              >
+                                <div className="flex-shrink-0">
+                                  {historyItem.logo ? (
+                                    historyItem.logo.startsWith('http') || historyItem.logo.startsWith('data:') ? (
+                                      <img
+                                        src={historyItem.logo}
+                                        alt="Server Logo"
+                                        className="w-6 h-6 object-cover rounded"
+                                        onError={(e) => {
+                                          e.currentTarget.style.display = 'none';
+                                          const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                                          if (fallback) fallback.style.display = 'inline';
+                                        }}
+                                      />
+                                    ) : (
+                                      <span className="text-lg">{historyItem.logo}</span>
+                                    )
                                   ) : (
-                                    <div className="h-8 w-8 rounded-full bg-slate-200 dark:bg-slate-600 flex items-center justify-center">
-                                      <svg className="w-4 h-4 text-slate-500" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                                      </svg>
+                                    <span className="text-lg">🌐</span>
+                                  )}
+                                  <span className="text-lg hidden">🌐</span>
+                                </div>
+                                <div className="flex-1 text-left min-w-0">
+                                  <div className="font-medium truncate">
+                                    {historyItem.customName || historyItem.address}
+                                  </div>
+                                  {historyItem.customName && (
+                                    <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                                      {historyItem.address}
                                     </div>
                                   )}
                                 </div>
-                                <div className="ml-4">
-                                  <div className="text-sm font-medium text-slate-900 dark:text-white">
-                                    {player.name}
-                                  </div>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-white table-text-white">
-                                {player.id}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium table-text-white ${player.ping < 50
-                                ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-white'
-                                : player.ping < 100
-                                  ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-white'
-                                  : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-white'
-                                }`}>
-                                {player.ping}ms
-                              </span>
-                            </td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan={3} className="px-6 py-12 text-center">
-                            <div className="text-slate-500 dark:text-slate-400">
-                              <svg className="mx-auto h-12 w-12 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                              </svg>
-                              <p className="text-sm">
-                                {serverData ? 'Not Found Data' : 'Not Found Data'}
-                              </p>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Pagination */}
-                {filteredPlayers.length > playersPerPage && (
-                  <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700">
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm text-slate-700 dark:text-slate-300">
-                        Showing {((currentPage - 1) * playersPerPage) + 1} to {Math.min(currentPage * playersPerPage, filteredPlayers.length)} of {filteredPlayers.length} players
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => changePage(Math.max(currentPage - 1, 1))}
-                          disabled={currentPage === 1}
-                          className="px-3 py-1 text-sm bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-md hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          Previous
-                        </button>
-
-                        <div className="flex items-center space-x-1">
-                          {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                            let pageNum;
-                            if (totalPages <= 5) {
-                              pageNum = i + 1;
-                            } else if (currentPage <= 3) {
-                              pageNum = i + 1;
-                            } else if (currentPage >= totalPages - 2) {
-                              pageNum = totalPages - 4 + i;
-                            } else {
-                              pageNum = currentPage - 2 + i;
-                            }
-
-                            return (
-                              <button
-                                key={pageNum}
-                                onClick={() => changePage(pageNum)}
-                                className={`px-3 py-1 text-sm rounded-md ${currentPage === pageNum
-                                  ? 'bg-blue-600 text-white'
-                                  : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
-                                  }`}
-                              >
-                                {pageNum}
                               </button>
-                            );
-                          })}
-                        </div>
+                              <button
+                                onClick={() => startEditingServer(historyItem)}
+                                className="px-2 py-2 text-blue-500 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900"
+                                title="แก้ไขชื่อและโลโก้"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={() => removeFromHistory(historyItem)}
+                                className="px-2 py-2 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900 rounded-r-lg"
+                                title="ลบออกจากรายการ"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
 
-                        <button
-                          onClick={() => changePage(Math.min(currentPage + 1, totalPages))}
-                          disabled={currentPage === totalPages}
-                          className="px-3 py-1 text-sm bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-md hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          Next
-                        </button>
+              {/* Server Info */}
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 sm:p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-medium text-slate-900 dark:text-white">
+                    ข้อมูลเซิร์ฟเวอร์
+                  </h3>
+                  {serverData && (
+                    <Tooltip title="แชร์ข้อมูลเซิร์ฟเวอร์นี้">
+                      <IconButton
+                        onClick={generateShareUrl}
+                        size="small"
+                        sx={{
+                          color: '#10b981',
+                          '&:hover': {
+                            bgcolor: currentTheme === 'dark' ? '#065f46' : '#d1fae5'
+                          }
+                        }}
+                      >
+                        <ShareIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  )}
+                </div>
+                <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-4 max-h-64 overflow-y-auto hide-scrollbar">
+                  <pre className="text-xs text-slate-600 dark:text-slate-400 whitespace-pre-wrap">
+                    {serverData?.dynamic ? JSON.stringify(serverData.dynamic, null, 2) : 'ไม่มีข้อมูล'}
+                  </pre>
+                </div>
+              </div>
+
+              {/* Player Details */}
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 sm:p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-medium text-slate-900 dark:text-white">
+                    รายละเอียดผู้เล่น
+                  </h3>
+                  {selectedPlayer && (
+                    <button
+                      onClick={copyPlayerData}
+                      className="p-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-300 dark:hover:bg-slate-700 transition-colors"
+                      title="คัดลอกข้อมูลผู้เล่น"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+                {selectedPlayer ? (
+                  <div className="space-y-4">
+                    {selectedPlayer.discordAvatar && (
+                      <div className="flex justify-center">
+                        <img
+                          src={selectedPlayer.discordAvatar}
+                          alt="Discord Avatar"
+                          className="w-16 h-16 rounded-full border-2 border-slate-200 dark:border-slate-600"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      </div>
+                    )}
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500 dark:text-slate-400">ID:</span>
+                        <span className="font-medium text-slate-900 dark:text-white">{selectedPlayer.id}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500 dark:text-slate-400">Name:</span>
+                        <span className="font-medium text-slate-900 dark:text-white">{selectedPlayer.name}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500 dark:text-slate-400">Ping:</span>
+                        <span className={`font-medium ${selectedPlayer.ping < 50 ? 'text-green-600' :
+                          selectedPlayer.ping < 100 ? 'text-yellow-600' : 'text-red-600'
+                          }`}>
+                          {selectedPlayer.ping}ms
+                        </span>
+                      </div>
+                      {selectedPlayer.endpoint && !selectedPlayer.endpoint.startsWith('127.0.0.1') && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-500 dark:text-slate-400">Endpoint:</span>
+                          <span className="font-mono text-xs text-slate-900 dark:text-white">{selectedPlayer.endpoint}</span>
+                        </div>
+                      )}
+                      {selectedPlayer.discordId && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-500 dark:text-slate-400">Discord:</span>
+                          <span className="font-mono text-xs text-slate-900 dark:text-white">{selectedPlayer.discordId}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-slate-500 dark:text-slate-400 text-sm">
+                    Click on a player to view details
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Main Content */}
+            <div className="lg:col-span-8">
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+                <div className="p-6 border-b border-slate-200 dark:border-slate-700" data-section="online-players">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex flex-col">
+                      <h2 className="text-lg font-medium text-slate-900 dark:text-white flex items-center">
+                        {customShareName ? customShareName : 'Online Players'}
+                        {isLoadingPlayers && (
+                          <div className="ml-2 w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                        )}
+                      </h2>
+                      {customShareName && (
+                        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                          {serverIp}:{serverPort}
+                        </p>
+                      )}
+                      {playerDataHash && (
+                        <div className="flex items-center mt-1">
+                          <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">
+                            SHA256: {playerDataHash}
+                          </span>
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(playerDataHash).then(() => {
+                                addNotification('success', 'คัดลอก SHA256 hash เรียบร้อยแล้ว');
+                              }).catch(() => {
+                                addNotification('error', 'ไม่สามารถคัดลอก hash ได้');
+                              });
+                            }}
+                            className="ml-2 p-1 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                            title="คัดลอก SHA256 hash"
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    {filteredPlayers.length > 0 && (
+                      <span className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-sm font-medium px-2.5 py-0.5 rounded-full">
+                        {filteredPlayers.length} / {serverData?.players.length || 0}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={searchName}
+                        onChange={(e) => setSearchName(e.target.value)}
+                        className="w-full pl-10 pr-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg 
+                               bg-white dark:bg-slate-700 text-slate-900 dark:text-white
+                               focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                               placeholder-slate-400 dark:placeholder-slate-500"
+                        placeholder="Search by name..."
+                      />
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <svg className="h-4 w-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                      </div>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={searchId}
+                        onChange={(e) => setSearchId(e.target.value)}
+                        className="w-full pl-10 pr-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg 
+                               bg-white dark:bg-slate-700 text-slate-900 dark:text-white
+                               focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                               placeholder-slate-400 dark:placeholder-slate-500"
+                        placeholder="Search by ID..."
+                      />
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <span className="text-slate-400 font-mono text-sm">#</span>
                       </div>
                     </div>
                   </div>
-                )}
+                </div>
+
+                <div className="overflow-hidden">
+                  <div className="max-h-[600px] overflow-y-auto hide-scrollbar">
+                    <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700" data-player-table>
+                      <thead className="bg-slate-50 dark:bg-slate-900 sticky top-0">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                            Player
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                            ID
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                            Ping
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700">
+                        {paginatedPlayers.length > 0 ? (
+                          paginatedPlayers.map((player) => (
+                            <tr
+                              key={player.id}
+                              onClick={() => handlePlayerClick(player)}
+                              className={`cursor-pointer transition-colors ${selectedPlayer?.id === player.id
+                                ? 'bg-blue-100 dark:bg-blue-900 border-l-4 border-blue-500'
+                                : 'hover:bg-slate-50 dark:hover:bg-slate-700'
+                                }`}
+                            >
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="flex items-center">
+                                  <div className="flex-shrink-0 h-8 w-8">
+                                    {player.discordAvatar ? (
+                                      <img
+                                        className="h-8 w-8 rounded-full"
+                                        src={player.discordAvatar}
+                                        alt=""
+                                        onError={(e) => {
+                                          e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMTYiIGN5PSIxNiIgcj0iMTYiIGZpbGw9IiNEMUQ1REIiLz4KPHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB4PSI4IiB5PSI4Ij4KPHBhdGggZD0iTTggMTJDMTAuMjA5MSAxMiAxMiAxMC4yMDkxIDEyIDhDMTIgNS43OTA5IDEwLjIwOTEgNCA4IDRDNS43OTA5IDQgNCA1Ljc5MDkgNCA4QzQgMTAuMjA5MSA1Ljc5MDkgMTIgOCAxMloiIGZpbGw9IiM2QjcyODAiLz4KPC9zdmc+Cjwvc3ZnPgo=';
+                                        }}
+                                      />
+                                    ) : player.discordId ? (
+                                      <div className="h-8 w-8 rounded-full bg-slate-200 dark:bg-slate-600 flex items-center justify-center">
+                                        <div className="w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></div>
+                                      </div>
+                                    ) : (
+                                      <div className="h-8 w-8 rounded-full bg-slate-200 dark:bg-slate-600 flex items-center justify-center">
+                                        <svg className="w-4 h-4 text-slate-500" fill="currentColor" viewBox="0 0 20 20">
+                                          <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                                        </svg>
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="ml-4">
+                                    <div className="text-sm font-medium text-slate-900 dark:text-white">
+                                      {player.name}
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-white table-text-white">
+                                  {player.id}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium table-text-white ${player.ping < 50
+                                  ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-white'
+                                  : player.ping < 100
+                                    ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-white'
+                                    : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-white'
+                                  }`}>
+                                  {player.ping}ms
+                                </span>
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={3} className="px-6 py-12 text-center">
+                              <div className="text-slate-500 dark:text-slate-400">
+                                <svg className="mx-auto h-12 w-12 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                </svg>
+                                <p className="text-sm">
+                                  {serverData ? 'Not Found Data' : 'Not Found Data'}
+                                </p>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Pagination */}
+                  {filteredPlayers.length > playersPerPage && (
+                    <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm text-slate-700 dark:text-slate-300">
+                          Showing {((currentPage - 1) * playersPerPage) + 1} to {Math.min(currentPage * playersPerPage, filteredPlayers.length)} of {filteredPlayers.length} players
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => changePage(Math.max(currentPage - 1, 1))}
+                            disabled={currentPage === 1}
+                            className="px-3 py-1 text-sm bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-md hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Previous
+                          </button>
+
+                          <div className="flex items-center space-x-1">
+                            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                              let pageNum;
+                              if (totalPages <= 5) {
+                                pageNum = i + 1;
+                              } else if (currentPage <= 3) {
+                                pageNum = i + 1;
+                              } else if (currentPage >= totalPages - 2) {
+                                pageNum = totalPages - 4 + i;
+                              } else {
+                                pageNum = currentPage - 2 + i;
+                              }
+
+                              return (
+                                <button
+                                  key={pageNum}
+                                  onClick={() => changePage(pageNum)}
+                                  className={`px-3 py-1 text-sm rounded-md ${currentPage === pageNum
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                                    }`}
+                                >
+                                  {pageNum}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          <button
+                            onClick={() => changePage(Math.min(currentPage + 1, totalPages))}
+                            disabled={currentPage === totalPages}
+                            className="px-3 py-1 text-sm bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-md hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Notifications */}
-      {showLoading && <LoadingIndicator />}
-      <NotificationList />
+        {/* Notifications */}
+        {showLoading && <LoadingIndicator />}
+        <NotificationList />
 
-      {/* Edit Server Modal */}
-      {showEditModal && <EditServerModal />}
+        {/* Edit Server Modal */}
+        {showEditModal && <EditServerModal />}
 
-      {/* Share Dialog */}
-      <Dialog 
-        open={showShareDialog} 
-        onClose={handleShareDialogClose}
-        maxWidth="sm"
-        fullWidth
-        PaperProps={{
-          sx: {
-            borderRadius: 4,
-            bgcolor: currentTheme === 'dark' ? '#1e293b' : '#ffffff',
-            color: currentTheme === 'dark' ? '#ffffff' : '#1f2937',
-            border: currentTheme === 'dark' ? '1px solid #374151' : '1px solid #e5e7eb',
-            boxShadow: currentTheme === 'dark' 
-              ? '0 25px 50px -12px rgba(0, 0, 0, 0.8)' 
-              : '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-            overflow: 'hidden'
-          }
-        }}
-        BackdropProps={{
-          sx: {
-            bgcolor: 'rgba(0, 0, 0, 0.7)',
-            backdropFilter: 'blur(8px)'
-          }
-        }}
-      >
-        {/* Header with gradient */}
-        <Box sx={{
-          background: currentTheme === 'dark' 
-            ? 'linear-gradient(135deg, #1e293b 0%, #334155 100%)'
-            : 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
-          p: 3,
-          color: '#ffffff'
-        }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Box sx={{
-                p: 1.5,
-                borderRadius: 2,
-                bgcolor: 'rgba(255, 255, 255, 0.1)',
-                backdropFilter: 'blur(10px)'
-              }}>
-                <ShareIcon sx={{ fontSize: 24 }} />
-              </Box>
-              <Box>
-                <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
-                  แชร์ลิงก์เซิร์ฟเวอร์
-                </Typography>
-                <Typography variant="body2" sx={{ opacity: 0.8 }}>
-                  สร้างลิงก์สำหรับแชร์ให้เพื่อนๆ
-                </Typography>
-              </Box>
-            </Box>
-            <IconButton 
-              onClick={handleShareDialogClose} 
-              sx={{
-                color: 'rgba(255, 255, 255, 0.8)',
-                '&:hover': {
-                  bgcolor: 'rgba(255, 255, 255, 0.1)',
-                  color: '#ffffff'
-                }
-              }}
-            >
-              <CloseIcon />
-            </IconButton>
-          </Box>
-        </Box>
-        
-        <DialogContent sx={{ 
-          p: 3,
-          bgcolor: currentTheme === 'dark' ? '#1e293b' : '#ffffff'
-        }}>
-          {/* Server Info Card */}
-          <Paper 
-            elevation={0} 
-            sx={{ 
-              p: 3, 
-              mb: 3, 
-              bgcolor: currentTheme === 'dark' ? '#374151' : '#f8fafc',
-              border: `1px solid ${currentTheme === 'dark' ? '#4b5563' : '#e2e8f0'}`,
-              borderRadius: 3,
-              position: 'relative',
+        {/* Share Dialog */}
+        <Dialog
+          open={showShareDialog}
+          onClose={handleShareDialogClose}
+          maxWidth="sm"
+          fullWidth
+          PaperProps={{
+            sx: {
+              borderRadius: 4,
+              bgcolor: currentTheme === 'dark' ? '#1e293b' : '#ffffff',
+              color: currentTheme === 'dark' ? '#ffffff' : '#1f2937',
+              border: currentTheme === 'dark' ? '1px solid #374151' : '1px solid #e5e7eb',
+              boxShadow: currentTheme === 'dark'
+                ? '0 25px 50px -12px rgba(0, 0, 0, 0.8)'
+                : '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
               overflow: 'hidden'
-            }}
-          >
-            {/* Decorative element */}
-            <Box sx={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              height: 4,
-              background: 'linear-gradient(90deg, #3b82f6, #10b981, #f59e0b)'
-            }} />
-            
-            <Typography 
-              variant="subtitle1" 
-              sx={{ 
-                mb: 2, 
-                fontWeight: 600,
-                color: currentTheme === 'dark' ? '#ffffff' : '#1f2937',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1
-              }}
-            >
-              <Box sx={{
-                width: 8,
-                height: 8,
-                borderRadius: '50%',
-                bgcolor: '#10b981'
-              }} />
-              ข้อมูลเซิร์ฟเวอร์
-            </Typography>
-            
-            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 1.5 }}>
-              <Chip 
-                label={`${serverIp}`} 
-                size="medium"
+            }
+          }}
+          BackdropProps={{
+            sx: {
+              bgcolor: 'rgba(0, 0, 0, 0.7)',
+              backdropFilter: 'blur(8px)'
+            }
+          }}
+        >
+          {/* Header with gradient */}
+          <Box sx={{
+            background: currentTheme === 'dark'
+              ? 'linear-gradient(135deg, #1e293b 0%, #334155 100%)'
+              : 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+            p: 3,
+            color: '#ffffff'
+          }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Box sx={{
+                  p: 1.5,
+                  borderRadius: 2,
+                  bgcolor: 'rgba(255, 255, 255, 0.1)',
+                  backdropFilter: 'blur(10px)'
+                }}>
+                  <ShareIcon sx={{ fontSize: 24 }} />
+                </Box>
+                <Box>
+                  <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
+                    แชร์ลิงก์เซิร์ฟเวอร์
+                  </Typography>
+                  <Typography variant="body2" sx={{ opacity: 0.8 }}>
+                    สร้างลิงก์สำหรับแชร์ให้เพื่อนๆ
+                  </Typography>
+                </Box>
+              </Box>
+              <IconButton
+                onClick={handleShareDialogClose}
                 sx={{
-                  bgcolor: currentTheme === 'dark' ? '#1e293b' : '#ffffff',
-                  color: currentTheme === 'dark' ? '#60a5fa' : '#3b82f6',
-                  border: `1px solid ${currentTheme === 'dark' ? '#3b82f6' : '#3b82f6'}`,
-                  fontWeight: 600,
-                  '& .MuiChip-label': { px: 2 }
+                  color: 'rgba(255, 255, 255, 0.8)',
+                  '&:hover': {
+                    bgcolor: 'rgba(255, 255, 255, 0.1)',
+                    color: '#ffffff'
+                  }
                 }}
-                icon={<Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#3b82f6' }} />}
-              />
-              <Chip 
-                label={`Port: ${serverPort}`} 
-                size="medium"
-                sx={{
-                  bgcolor: currentTheme === 'dark' ? '#1e293b' : '#ffffff',
-                  color: currentTheme === 'dark' ? '#34d399' : '#10b981',
-                  border: `1px solid ${currentTheme === 'dark' ? '#10b981' : '#10b981'}`,
-                  fontWeight: 600,
-                  '& .MuiChip-label': { px: 2 }
-                }}
-                icon={<Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#10b981' }} />}
-              />
-              {customShareName && (
-                <Chip 
-                  label={customShareName} 
-                  size="medium"
-                  sx={{
-                    bgcolor: currentTheme === 'dark' ? '#1e293b' : '#ffffff',
-                    color: currentTheme === 'dark' ? '#fbbf24' : '#f59e0b',
-                    border: `1px solid ${currentTheme === 'dark' ? '#f59e0b' : '#f59e0b'}`,
-                    fontWeight: 600,
-                    '& .MuiChip-label': { px: 2 }
-                  }}
-                  icon={<Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#f59e0b' }} />}
-                />
-              )}
+              >
+                <CloseIcon />
+              </IconButton>
             </Box>
-          </Paper>
+          </Box>
 
-          {/* Server Name Input */}
-          <TextField
-            fullWidth
-            label="ชื่อเซิร์ฟเวอร์ (ไม่บังคับ)"
-            value={customShareName}
-            onChange={(e) => setCustomShareName(e.target.value)}
-            placeholder="เช่น Startown2.0, What City, Bangkok RP"
-            variant="outlined"
-            sx={{ mb: 2 }}
-            InputProps={{
-              sx: {
-                borderRadius: 3,
-                bgcolor: currentTheme === 'dark' ? '#374151' : '#ffffff',
-                color: currentTheme === 'dark' ? '#ffffff' : '#1f2937',
-                '& .MuiOutlinedInput-notchedOutline': {
-                  borderColor: currentTheme === 'dark' ? '#4b5563' : '#d1d5db',
-                  borderWidth: 2
-                },
-                '&:hover .MuiOutlinedInput-notchedOutline': {
-                  borderColor: currentTheme === 'dark' ? '#6b7280' : '#9ca3af'
-                },
-                '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                  borderColor: '#3b82f6',
-                  borderWidth: 2
-                }
-              }
-            }}
-            InputLabelProps={{
-              sx: { 
-                color: currentTheme === 'dark' ? '#9ca3af' : '#6b7280',
-                '&.Mui-focused': {
-                  color: '#3b82f6'
-                }
-              }
-            }}
-          />
-
-          {/* Shared By Input */}
-          <TextField
-            fullWidth
-            label="แชร์โดย (ไม่บังคับ)"
-            value={sharedFromUser}
-            onChange={(e) => setSharedFromUser(e.target.value)}
-            placeholder="เช่น ชื่อของคุณ หรือ ชื่อกิลด์"
-            variant="outlined"
-            sx={{ mb: 3 }}
-            InputProps={{
-              sx: {
-                borderRadius: 3,
-                bgcolor: currentTheme === 'dark' ? '#374151' : '#ffffff',
-                color: currentTheme === 'dark' ? '#ffffff' : '#1f2937',
-                '& .MuiOutlinedInput-notchedOutline': {
-                  borderColor: currentTheme === 'dark' ? '#4b5563' : '#d1d5db',
-                  borderWidth: 2
-                },
-                '&:hover .MuiOutlinedInput-notchedOutline': {
-                  borderColor: currentTheme === 'dark' ? '#6b7280' : '#9ca3af'
-                },
-                '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                  borderColor: '#10b981',
-                  borderWidth: 2
-                }
-              }
-            }}
-            InputLabelProps={{
-              sx: { 
-                color: currentTheme === 'dark' ? '#9ca3af' : '#6b7280',
-                '&.Mui-focused': {
-                  color: '#10b981'
-                }
-              }
-            }}
-          />
-
-          {/* Generated URL */}
-          {shareUrl && (
+          <DialogContent sx={{
+            p: 3,
+            bgcolor: currentTheme === 'dark' ? '#1e293b' : '#ffffff'
+          }}>
+            {/* Server Info Card */}
             <Paper
               elevation={0}
               sx={{
                 p: 3,
+                mb: 3,
                 bgcolor: currentTheme === 'dark' ? '#374151' : '#f8fafc',
-                border: `2px solid ${currentTheme === 'dark' ? '#10b981' : '#10b981'}`,
+                border: `1px solid ${currentTheme === 'dark' ? '#4b5563' : '#e2e8f0'}`,
                 borderRadius: 3,
-                position: 'relative'
+                position: 'relative',
+                overflow: 'hidden'
               }}
             >
-              <Typography 
-                variant="subtitle2" 
-                sx={{ 
+              {/* Decorative element */}
+              <Box sx={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 4,
+                background: 'linear-gradient(90deg, #3b82f6, #10b981, #f59e0b)'
+              }} />
+
+              <Typography
+                variant="subtitle1"
+                sx={{
                   mb: 2,
-                  color: currentTheme === 'dark' ? '#34d399' : '#059669',
                   fontWeight: 600,
+                  color: currentTheme === 'dark' ? '#ffffff' : '#1f2937',
                   display: 'flex',
                   alignItems: 'center',
                   gap: 1
                 }}
               >
-                <LinkIcon sx={{ fontSize: 18 }} />
-                ลิงก์สำหรับแชร์
+                <Box sx={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  bgcolor: '#10b981'
+                }} />
+                ข้อมูลเซิร์ฟเวอร์
               </Typography>
-              
+
+              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 1.5 }}>
+                <Chip
+                  label={`${serverIp}`}
+                  size="medium"
+                  sx={{
+                    bgcolor: currentTheme === 'dark' ? '#1e293b' : '#ffffff',
+                    color: currentTheme === 'dark' ? '#60a5fa' : '#3b82f6',
+                    border: `1px solid ${currentTheme === 'dark' ? '#3b82f6' : '#3b82f6'}`,
+                    fontWeight: 600,
+                    '& .MuiChip-label': { px: 2 }
+                  }}
+                  icon={<Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#3b82f6' }} />}
+                />
+                <Chip
+                  label={`Port: ${serverPort}`}
+                  size="medium"
+                  sx={{
+                    bgcolor: currentTheme === 'dark' ? '#1e293b' : '#ffffff',
+                    color: currentTheme === 'dark' ? '#34d399' : '#10b981',
+                    border: `1px solid ${currentTheme === 'dark' ? '#10b981' : '#10b981'}`,
+                    fontWeight: 600,
+                    '& .MuiChip-label': { px: 2 }
+                  }}
+                  icon={<Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#10b981' }} />}
+                />
+                {customShareName && (
+                  <Chip
+                    label={customShareName}
+                    size="medium"
+                    sx={{
+                      bgcolor: currentTheme === 'dark' ? '#1e293b' : '#ffffff',
+                      color: currentTheme === 'dark' ? '#fbbf24' : '#f59e0b',
+                      border: `1px solid ${currentTheme === 'dark' ? '#f59e0b' : '#f59e0b'}`,
+                      fontWeight: 600,
+                      '& .MuiChip-label': { px: 2 }
+                    }}
+                    icon={<Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#f59e0b' }} />}
+                  />
+                )}
+              </Box>
+            </Paper>
+
+            {/* Server Name Input */}
+            <TextField
+              fullWidth
+              label="ชื่อเซิร์ฟเวอร์ (ไม่บังคับ)"
+              value={customShareName}
+              onChange={(e) => setCustomShareName(e.target.value)}
+              placeholder="เช่น Startown2.0, What City, Bangkok RP"
+              variant="outlined"
+              sx={{ mb: 2 }}
+              InputProps={{
+                sx: {
+                  borderRadius: 3,
+                  bgcolor: currentTheme === 'dark' ? '#374151' : '#ffffff',
+                  color: currentTheme === 'dark' ? '#ffffff' : '#1f2937',
+                  '& .MuiOutlinedInput-notchedOutline': {
+                    borderColor: currentTheme === 'dark' ? '#4b5563' : '#d1d5db',
+                    borderWidth: 2
+                  },
+                  '&:hover .MuiOutlinedInput-notchedOutline': {
+                    borderColor: currentTheme === 'dark' ? '#6b7280' : '#9ca3af'
+                  },
+                  '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                    borderColor: '#3b82f6',
+                    borderWidth: 2
+                  }
+                }
+              }}
+              InputLabelProps={{
+                sx: {
+                  color: currentTheme === 'dark' ? '#9ca3af' : '#6b7280',
+                  '&.Mui-focused': {
+                    color: '#3b82f6'
+                  }
+                }
+              }}
+            />
+
+            {/* Shared By Input */}
+            <TextField
+              fullWidth
+              label="แชร์โดย (ไม่บังคับ)"
+              value={sharedFromUser}
+              onChange={(e) => setSharedFromUser(e.target.value)}
+              placeholder="เช่น ชื่อของคุณ หรือ ชื่อกิลด์"
+              variant="outlined"
+              sx={{ mb: 3 }}
+              InputProps={{
+                sx: {
+                  borderRadius: 3,
+                  bgcolor: currentTheme === 'dark' ? '#374151' : '#ffffff',
+                  color: currentTheme === 'dark' ? '#ffffff' : '#1f2937',
+                  '& .MuiOutlinedInput-notchedOutline': {
+                    borderColor: currentTheme === 'dark' ? '#4b5563' : '#d1d5db',
+                    borderWidth: 2
+                  },
+                  '&:hover .MuiOutlinedInput-notchedOutline': {
+                    borderColor: currentTheme === 'dark' ? '#6b7280' : '#9ca3af'
+                  },
+                  '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                    borderColor: '#10b981',
+                    borderWidth: 2
+                  }
+                }
+              }}
+              InputLabelProps={{
+                sx: {
+                  color: currentTheme === 'dark' ? '#9ca3af' : '#6b7280',
+                  '&.Mui-focused': {
+                    color: '#10b981'
+                  }
+                }
+              }}
+            />
+
+            {/* Generated URL - Always show */}
+            <Paper
+              elevation={0}
+              sx={{
+                p: 3,
+                bgcolor: currentTheme === 'dark' ? '#374151' : '#f8fafc',
+                border: `2px solid ${shareUrl ? (currentTheme === 'dark' ? '#10b981' : '#10b981') : (currentTheme === 'dark' ? '#4b5563' : '#d1d5db')}`,
+                borderRadius: 3,
+                position: 'relative',
+                transition: 'border-color 0.3s ease'
+              }}
+            >
+              <Typography
+                variant="subtitle2"
+                sx={{
+                  mb: 2,
+                  color: shareUrl ? (currentTheme === 'dark' ? '#34d399' : '#059669') : (currentTheme === 'dark' ? '#9ca3af' : '#6b7280'),
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1,
+                  transition: 'color 0.3s ease'
+                }}
+              >
+                <LinkIcon sx={{ fontSize: 18 }} />
+                ลิงก์สำหรับแชร์ {isGeneratingUrl ? '(กำลังสร้าง...)' : shareUrl ? '' : '(พร้อมสร้าง)'}
+              </Typography>
+
               <Box sx={{
                 p: 2,
                 bgcolor: currentTheme === 'dark' ? '#1e293b' : '#ffffff',
@@ -2130,96 +2160,115 @@ SERVER INFORMATION
                 border: `1px solid ${currentTheme === 'dark' ? '#4b5563' : '#e5e7eb'}`,
                 fontFamily: 'monospace',
                 fontSize: '0.875rem',
-                color: currentTheme === 'dark' ? '#d1d5db' : '#374151',
+                color: shareUrl ? (currentTheme === 'dark' ? '#d1d5db' : '#374151') : (currentTheme === 'dark' ? '#6b7280' : '#9ca3af'),
                 wordBreak: 'break-all',
-                position: 'relative'
+                position: 'relative',
+                minHeight: '60px',
+                display: 'flex',
+                alignItems: 'center',
+                transition: 'all 0.3s ease'
               }}>
-                {shareUrl}
-                <IconButton 
-                  onClick={copyShareUrl}
-                  sx={{
-                    position: 'absolute',
-                    top: 4,
-                    right: 4,
-                    color: currentTheme === 'dark' ? '#9ca3af' : '#6b7280',
-                    bgcolor: currentTheme === 'dark' ? '#374151' : '#f3f4f6',
-                    '&:hover': {
-                      bgcolor: currentTheme === 'dark' ? '#4b5563' : '#e5e7eb',
-                      color: currentTheme === 'dark' ? '#ffffff' : '#1f2937'
-                    }
-                  }}
-                  size="small"
-                >
-                  <CopyIcon sx={{ fontSize: 16 }} />
-                </IconButton>
+                {isGeneratingUrl ? (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Box sx={{
+                      width: 16,
+                      height: 16,
+                      border: '2px solid',
+                      borderColor: currentTheme === 'dark' ? '#4b5563' : '#d1d5db',
+                      borderTopColor: '#3b82f6',
+                      borderRadius: '50%',
+                      animation: 'spin 1s linear infinite'
+                    }} />
+                    กำลังสร้างลิงก์...
+                  </Box>
+                ) : (
+                  shareUrl || 'พิมพ์ข้อมูลเซิร์ฟเวอร์เพื่อสร้างลิงก์...'
+                )}
+
+                {shareUrl && !isGeneratingUrl && (
+                  <IconButton
+                    onClick={copyShareUrl}
+                    sx={{
+                      position: 'absolute',
+                      top: 4,
+                      right: 4,
+                      color: currentTheme === 'dark' ? '#9ca3af' : '#6b7280',
+                      bgcolor: currentTheme === 'dark' ? '#374151' : '#f3f4f6',
+                      '&:hover': {
+                        bgcolor: currentTheme === 'dark' ? '#4b5563' : '#e5e7eb',
+                        color: currentTheme === 'dark' ? '#ffffff' : '#1f2937'
+                      }
+                    }}
+                    size="small"
+                  >
+                    <CopyIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                )}
               </Box>
             </Paper>
-          )}
-        </DialogContent>
-        
-        <DialogActions sx={{ 
-          p: 3,
-          bgcolor: currentTheme === 'dark' ? '#1e293b' : '#ffffff',
-          borderTop: `1px solid ${currentTheme === 'dark' ? '#374151' : '#e5e7eb'}`,
-          gap: 2
-        }}>
-          <Button 
-            onClick={handleShareDialogClose} 
-            variant="outlined"
-            sx={{ 
-              borderRadius: 3,
-              px: 3,
-              py: 1,
-              color: currentTheme === 'dark' ? '#9ca3af' : '#6b7280',
-              borderColor: currentTheme === 'dark' ? '#4b5563' : '#d1d5db',
-              '&:hover': {
-                bgcolor: currentTheme === 'dark' ? '#374151' : '#f3f4f6',
-                borderColor: currentTheme === 'dark' ? '#6b7280' : '#9ca3af'
-              }
-            }}
-          >
-            ปิด
-          </Button>
-          
-          {shareUrl ? (
-            <Button 
-              onClick={copyShareUrl} 
-              variant="contained" 
-              startIcon={<CopyIcon />}
-              sx={{ 
+
+          </DialogContent>
+
+          <DialogActions sx={{
+            p: 3,
+            bgcolor: currentTheme === 'dark' ? '#1e293b' : '#ffffff',
+            borderTop: `1px solid ${currentTheme === 'dark' ? '#374151' : '#e5e7eb'}`,
+            gap: 2
+          }}>
+            <Button
+              onClick={handleShareDialogClose}
+              variant="outlined"
+              sx={{
                 borderRadius: 3,
-                px: 4,
+                px: 3,
                 py: 1,
-                bgcolor: '#10b981', 
-                '&:hover': { bgcolor: '#059669' },
-                color: '#ffffff',
-                fontWeight: 600,
-                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
+                color: currentTheme === 'dark' ? '#9ca3af' : '#6b7280',
+                borderColor: currentTheme === 'dark' ? '#4b5563' : '#d1d5db',
+                '&:hover': {
+                  bgcolor: currentTheme === 'dark' ? '#374151' : '#f3f4f6',
+                  borderColor: currentTheme === 'dark' ? '#6b7280' : '#9ca3af'
+                }
               }}
             >
-              คัดลอกลิงก์
+              ปิด
             </Button>
-          ) : (
-            <Button 
-              onClick={generateShareUrl} 
-              variant="contained" 
-              startIcon={<LinkIcon />}
+
+            <Button
+              onClick={copyShareUrl}
+              variant="contained"
+              startIcon={isGeneratingUrl ? (
+                <Box sx={{
+                  width: 16,
+                  height: 16,
+                  border: '2px solid',
+                  borderColor: 'rgba(255, 255, 255, 0.3)',
+                  borderTopColor: '#ffffff',
+                  borderRadius: '50%',
+                  animation: 'spin 1s linear infinite'
+                }} />
+              ) : <CopyIcon />}
+              disabled={!shareUrl || isGeneratingUrl}
               sx={{
                 borderRadius: 3,
                 px: 4,
                 py: 1,
-                bgcolor: '#3b82f6',
-                '&:hover': { bgcolor: '#2563eb' },
-                color: '#ffffff',
+                bgcolor: shareUrl && !isGeneratingUrl ? '#10b981' : (currentTheme === 'dark' ? '#374151' : '#e5e7eb'),
+                '&:hover': {
+                  bgcolor: shareUrl && !isGeneratingUrl ? '#059669' : (currentTheme === 'dark' ? '#4b5563' : '#d1d5db')
+                },
+                color: shareUrl && !isGeneratingUrl ? '#ffffff' : (currentTheme === 'dark' ? '#6b7280' : '#9ca3af'),
                 fontWeight: 600,
-                boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)'
+                boxShadow: shareUrl && !isGeneratingUrl ? '0 4px 12px rgba(16, 185, 129, 0.3)' : 'none',
+                transition: 'all 0.3s ease',
+                '&.Mui-disabled': {
+                  color: currentTheme === 'dark' ? '#6b7280' : '#9ca3af'
+                }
               }}
             >
-              สร้างลิงก์
+              {isGeneratingUrl ? 'กำลังสร้าง...' : shareUrl ? 'คัดลอกลิงก์' : 'รอข้อมูล...'}
             </Button>
-          )}
-        </DialogActions>
-      </Dialog>
+          </DialogActions>
+        </Dialog>
 
 
 
