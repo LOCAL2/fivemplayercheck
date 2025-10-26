@@ -1,4 +1,25 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogActions, 
+  Button, 
+  TextField, 
+  Box, 
+  Typography, 
+  IconButton, 
+  Chip,
+  Tooltip,
+  Paper,
+  ThemeProvider,
+  createTheme
+} from '@mui/material';
+import { 
+  Share as ShareIcon, 
+  ContentCopy as CopyIcon, 
+  Close as CloseIcon,
+  Link as LinkIcon
+} from '@mui/icons-material';
 
 interface Player {
   id: number;
@@ -68,15 +89,102 @@ const App: React.FC = () => {
   const [editLogo, setEditLogo] = useState('');
   const [logoType, setLogoType] = useState<'url' | 'file'>('url');
   const nameInputRef = useRef<HTMLInputElement>(null);
+  
+  // Share Link Feature States
+  const [showShareDialog, setShowShareDialog] = useState(false);
+  const [shareUrl, setShareUrl] = useState('');
+  const [customShareName, setCustomShareName] = useState('');
+  const [isSharedLink, setIsSharedLink] = useState(false);
+  const [sharedFromUser, setSharedFromUser] = useState('');
+
+  // Material-UI Theme
+  const muiTheme = createTheme({
+    palette: {
+      mode: currentTheme === 'dark' ? 'dark' : 'light',
+      primary: {
+        main: '#3b82f6',
+      },
+      secondary: {
+        main: '#10b981',
+      },
+      background: {
+        default: currentTheme === 'dark' ? '#0f172a' : '#f8fafc',
+        paper: currentTheme === 'dark' ? '#1e293b' : '#ffffff',
+      },
+      text: {
+        primary: currentTheme === 'dark' ? '#ffffff' : '#1f2937',
+        secondary: currentTheme === 'dark' ? '#d1d5db' : '#6b7280',
+      },
+    },
+    typography: {
+      fontFamily: 'inherit',
+    },
+    components: {
+      MuiDialog: {
+        styleOverrides: {
+          paper: {
+            backgroundColor: currentTheme === 'dark' ? '#1e293b' : '#ffffff',
+            color: currentTheme === 'dark' ? '#ffffff' : '#1f2937',
+          }
+        }
+      },
+      MuiChip: {
+        styleOverrides: {
+          root: {
+            backgroundColor: currentTheme === 'dark' ? '#374151' : '#e5e7eb',
+            color: currentTheme === 'dark' ? '#ffffff' : '#1f2937',
+          }
+        }
+      }
+    }
+  });
 
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
+    
+    // Check for new format first (encoded)
+    const serverParam = urlParams.get('s');
+    const sharedByParam = urlParams.get('by');
+    
+    // Check for old format (backward compatibility)
     const ipParam = urlParams.get('ip_address');
     const portParam = urlParams.get('port');
+    const serverNameParam = urlParams.get('server_name');
 
-    if (ipParam) setServerIp(ipParam);
-    if (portParam) setServerPort(portParam);
+    let serverData = null;
+
+    if (serverParam) {
+      // New format - decode the server data
+      serverData = decodeServerData(serverParam);
+      if (serverData) {
+        setIsSharedLink(true);
+        if (sharedByParam) {
+          setSharedFromUser(decodeURIComponent(sharedByParam));
+        }
+      }
+    } else if (ipParam) {
+      // Old format - backward compatibility
+      serverData = {
+        ip: ipParam,
+        port: portParam || '30120',
+        name: serverNameParam
+      };
+      setIsSharedLink(true);
+    }
+
+    if (serverData) {
+      setServerIp(serverData.ip);
+      setServerPort(serverData.port);
+      if (serverData.name) {
+        setCustomShareName(serverData.name);
+      }
+
+      // Auto-fetch data if URL contains server info
+      setTimeout(() => {
+        fetchServerDataWithParams(serverData.ip, serverData.port);
+      }, 100);
+    }
 
 
 
@@ -113,6 +221,11 @@ const App: React.FC = () => {
       }
     }
   }, []);
+
+  // Debug useEffect to track state changes
+  useEffect(() => {
+    console.log('State updated - serverIp:', serverIp, 'serverPort:', serverPort);
+  }, [serverIp, serverPort]);
 
   const changeTheme = (theme: string) => {
     // Update HTML attributes
@@ -281,6 +394,99 @@ SERVER INFORMATION
     });
   };
 
+  // URL Encoding/Decoding Functions
+  const encodeServerData = (ip: string, port: string, name?: string) => {
+    const data = { ip, port, ...(name && { name }) };
+    const encoded = btoa(JSON.stringify(data));
+    return encoded.replace(/[+/=]/g, (match) => {
+      switch (match) {
+        case '+': return '-';
+        case '/': return '_';
+        case '=': return '';
+        default: return match;
+      }
+    });
+  };
+
+  const decodeServerData = (encoded: string) => {
+    try {
+      // Restore base64 padding and characters
+      let restored = encoded.replace(/[-_]/g, (match) => {
+        return match === '-' ? '+' : '/';
+      });
+      
+      // Add padding if needed
+      while (restored.length % 4) {
+        restored += '=';
+      }
+      
+      const decoded = atob(restored);
+      return JSON.parse(decoded);
+    } catch (error) {
+      console.warn('Failed to decode server data:', error);
+      return null;
+    }
+  };
+
+  // Share Link Functions
+  const generateShareUrl = () => {
+    console.log('generateShareUrl called, serverIp:', serverIp, 'serverPort:', serverPort);
+    
+    // Check if serverIp is empty, try to get from URL params as fallback
+    let currentServerIp = serverIp.trim();
+    let currentServerPort = serverPort;
+    
+    if (!currentServerIp) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const ipParam = urlParams.get('ip_address');
+      const portParam = urlParams.get('port');
+      const serverParam = urlParams.get('s');
+      
+      if (ipParam) {
+        currentServerIp = ipParam;
+        currentServerPort = portParam || '30120';
+        console.log('Using URL params as fallback:', currentServerIp, currentServerPort);
+      } else if (serverParam) {
+        const decoded = decodeServerData(serverParam);
+        if (decoded) {
+          currentServerIp = decoded.ip;
+          currentServerPort = decoded.port;
+        }
+      }
+      
+      if (!currentServerIp) {
+        addNotification('error', 'กรุณาใส่ที่อยู่เซิร์ฟเวอร์ก่อน');
+        return;
+      }
+    }
+
+    const baseUrl = window.location.origin + window.location.pathname;
+    const encoded = encodeServerData(currentServerIp, currentServerPort, customShareName.trim() || undefined);
+    
+    let url = `${baseUrl}?s=${encoded}`;
+    if (sharedFromUser.trim()) {
+      url += `&by=${encodeURIComponent(sharedFromUser.trim())}`;
+    }
+    
+    setShareUrl(url);
+    setShowShareDialog(true);
+  };
+
+  const copyShareUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      addNotification('success', 'คัดลอกลิงก์เรียบร้อยแล้ว!');
+    } catch (error) {
+      addNotification('error', 'ไม่สามารถคัดลอกลิงก์ได้');
+    }
+  };
+
+  const handleShareDialogClose = () => {
+    setShowShareDialog(false);
+    setShareUrl('');
+    setCustomShareName('');
+  };
+
   // Generate SHA256 hash of player data
   const generatePlayerDataHash = async (players: PlayerWithDiscord[]) => {
     if (!players || players.length === 0) return '';
@@ -427,10 +633,9 @@ SERVER INFORMATION
           tableHeader.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
       }
-    }, 150); // Slightly longer delay to ensure DOM update
+    }, 150); 
   };
 
-  // Close settings dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (showSettingsModal) {
@@ -445,19 +650,15 @@ SERVER INFORMATION
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showSettingsModal]);
 
-  const fetchServerData = async () => {
-    if (!serverIp.trim()) {
+  const fetchServerDataWithParams = async (ip: string, port: string) => {
+    if (!ip.trim()) {
       addNotification('error', 'กรุณาใส่ IP หรือ Domain ของเซิร์ฟเวอร์');
       return;
     }
-
-    // Show loading indicator
     setShowLoading(true);
 
     try {
-      const serverAddress = `${serverIp}:${serverPort}`;
-      
-      // Fetch server information first
+      const serverAddress = `${ip}:${port}`;
       const corsProxies = [
         'https://corsproxy.io/?',
         'https://api.allorigins.win/raw?url='
@@ -466,7 +667,128 @@ SERVER INFORMATION
       let serverInfo = null;
       let players = [];
 
-      // Try to get server information
+      for (const corsProxy of corsProxies) {
+        try {
+          const infoUrl = corsProxy + encodeURIComponent('https://fivem-id.com/information');
+          
+          const infoResponse = await fetch(infoUrl, {
+            method: 'POST',
+            headers: {
+              'Accept': 'application/json, text/javascript, */*; q=0.01',
+              'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+              'Origin': 'https://fivem-id.com',
+              'Referer': 'https://fivem-id.com/',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'
+            },
+            body: `server=${encodeURIComponent(serverAddress)}`,
+            signal: AbortSignal.timeout(15000)
+          });
+
+          if (infoResponse.ok) {
+            serverInfo = await infoResponse.json();
+            break;
+          }
+        } catch (error) {
+          console.warn(`Failed to get server info via ${corsProxy}:`, error);
+          continue;
+        }
+      }
+
+      // Try to get players data
+      for (const corsProxy of corsProxies) {
+        try {
+          const playersUrl = corsProxy + encodeURIComponent('https://fivem-id.com/ajax');
+          
+          const playersResponse = await fetch(playersUrl, {
+            method: 'POST',
+            headers: {
+              'Accept': 'application/json, text/javascript, */*; q=0.01',
+              'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+              'Origin': 'https://fivem-id.com',
+              'Referer': 'https://fivem-id.com/',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'
+            },
+            body: `server=${encodeURIComponent(serverAddress)}`,
+            signal: AbortSignal.timeout(15000)
+          });
+
+          if (playersResponse.ok) {
+            const playersData = await playersResponse.json();
+            if (Array.isArray(playersData)) {
+              players = playersData;
+            }
+            break;
+          }
+        } catch (error) {
+          console.warn(`Failed to get players via ${corsProxy}:`, error);
+          continue;
+        }
+      }
+
+      // Create combined data structure
+      const combinedData = {
+        dynamic: serverInfo || {
+          hostname: 'Unknown Server',
+          clients: players.length,
+          sv_maxclients: 'Unknown'
+        },
+        players: players
+      };
+
+      setServerData(combinedData);
+      setSelectedPlayer(null);
+
+      // Add to server history
+      addToServerHistory(ip);
+
+      // Hide loading and show success notification
+      setShowLoading(false);
+      addNotification('success', `เชื่อมต่อสำเร็จ! พบผู้เล่นออนไลน์ ${players.length} คน`);
+
+    } catch (error) {
+      console.error('Error fetching server data:', error);
+
+      let errorMessage = 'Unable to connect to server';
+
+      if (error instanceof Error) {
+        if (error.message.includes('timeout') || error.message.includes('AbortError')) {
+          errorMessage = 'Connection timeout. Please try again.';
+        } else if (error.message.includes('CORS')) {
+          errorMessage = 'Server does not allow cross-origin requests';
+        } else if (error.message.includes('Failed to fetch')) {
+          errorMessage = 'Unable to connect to API. Please try again.';
+        } else if (error.message.includes('Cannot fetch data from API')) {
+          errorMessage = 'Server API is currently unavailable. Please check the server address and try again.';
+        } else if (error.message.includes('Invalid server response')) {
+          errorMessage = 'Server returned invalid data format. Please verify the server address.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+
+      // Hide loading and show error notification
+      setShowLoading(false);
+      addNotification('error', errorMessage);
+    }
+  };
+
+  const fetchServerData = async () => {
+    if (!serverIp.trim()) {
+      addNotification('error', 'กรุณาใส่ IP หรือ Domain ของเซิร์ฟเวอร์');
+      return;
+    }
+    setShowLoading(true);
+
+    try {
+      const serverAddress = `${serverIp}:${serverPort}`;
+      const corsProxies = [
+        'https://corsproxy.io/?',
+        'https://api.allorigins.win/raw?url='
+      ];
+
+      let serverInfo = null;
+      let players = [];
+
       for (const corsProxy of corsProxies) {
         try {
           const infoUrl = corsProxy + encodeURIComponent('https://fivem-id.com/information');
@@ -983,7 +1305,40 @@ SERVER INFORMATION
   */
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 hide-scrollbar">
+    <ThemeProvider theme={muiTheme}>
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-900 hide-scrollbar">
+      
+      {/* Welcome Banner for Shared Links */}
+      {isSharedLink && (
+        <div className="bg-gradient-to-r from-blue-600 to-green-600 text-white">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="flex-shrink-0">
+                  <ShareIcon sx={{ fontSize: 20 }} />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">
+                    🎉 คุณได้รับลิงก์แชร์เซิร์ฟเวอร์ FiveM!
+                  </p>
+                  {sharedFromUser && (
+                    <p className="text-xs opacity-90">
+                      แชร์โดย: {sharedFromUser}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => setIsSharedLink(false)}
+                className="text-white/80 hover:text-white transition-colors"
+              >
+                <CloseIcon sx={{ fontSize: 18 }} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -1062,13 +1417,24 @@ SERVER INFORMATION
                   />
                 </div>
 
-                <button
-                  onClick={fetchServerData}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-4 
-                           rounded-lg focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                >
-                  ดึงข้อมูล
-                </button>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={fetchServerData}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-4 
+                             rounded-lg focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+                  >
+                    ดึงข้อมูล
+                  </button>
+                  <button
+                    onClick={generateShareUrl}
+                    className="bg-green-600 hover:bg-green-700 text-white font-medium py-2.5 px-4 
+                             rounded-lg focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors
+                             flex items-center justify-center space-x-2"
+                  >
+                    <ShareIcon sx={{ fontSize: 18 }} />
+                    <span>แชร์</span>
+                  </button>
+                </div>
 
                 {/* Server History */}
                 {serverHistory.length > 0 && (
@@ -1157,9 +1523,27 @@ SERVER INFORMATION
 
             {/* Server Info */}
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 sm:p-6">
-              <h3 className="text-lg font-medium text-slate-900 dark:text-white mb-4">
-                ข้อมูลเซิร์ฟเวอร์
-              </h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-medium text-slate-900 dark:text-white">
+                  ข้อมูลเซิร์ฟเวอร์
+                </h3>
+                {serverData && (
+                  <Tooltip title="แชร์ข้อมูลเซิร์ฟเวอร์นี้">
+                    <IconButton 
+                      onClick={generateShareUrl}
+                      size="small"
+                      sx={{ 
+                        color: '#10b981',
+                        '&:hover': { 
+                          bgcolor: currentTheme === 'dark' ? '#065f46' : '#d1fae5' 
+                        }
+                      }}
+                    >
+                      <ShareIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                )}
+              </div>
               <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-4 max-h-64 overflow-y-auto hide-scrollbar">
                 <pre className="text-xs text-slate-600 dark:text-slate-400 whitespace-pre-wrap">
                   {serverData?.dynamic ? JSON.stringify(serverData.dynamic, null, 2) : 'ไม่มีข้อมูล'}
@@ -1245,11 +1629,16 @@ SERVER INFORMATION
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex flex-col">
                     <h2 className="text-lg font-medium text-slate-900 dark:text-white flex items-center">
-                      Online Players
+                      {customShareName ? customShareName : 'Online Players'}
                       {isLoadingPlayers && (
                         <div className="ml-2 w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                       )}
                     </h2>
+                    {customShareName && (
+                      <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                        {serverIp}:{serverPort}
+                      </p>
+                    )}
                     {playerDataHash && (
                       <div className="flex items-center mt-1">
                         <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">
@@ -1477,7 +1866,365 @@ SERVER INFORMATION
       {/* Edit Server Modal */}
       {showEditModal && <EditServerModal />}
 
-    </div>
+      {/* Share Dialog */}
+      <Dialog 
+        open={showShareDialog} 
+        onClose={handleShareDialogClose}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 4,
+            bgcolor: currentTheme === 'dark' ? '#1e293b' : '#ffffff',
+            color: currentTheme === 'dark' ? '#ffffff' : '#1f2937',
+            border: currentTheme === 'dark' ? '1px solid #374151' : '1px solid #e5e7eb',
+            boxShadow: currentTheme === 'dark' 
+              ? '0 25px 50px -12px rgba(0, 0, 0, 0.8)' 
+              : '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            overflow: 'hidden'
+          }
+        }}
+        BackdropProps={{
+          sx: {
+            bgcolor: 'rgba(0, 0, 0, 0.7)',
+            backdropFilter: 'blur(8px)'
+          }
+        }}
+      >
+        {/* Header with gradient */}
+        <Box sx={{
+          background: currentTheme === 'dark' 
+            ? 'linear-gradient(135deg, #1e293b 0%, #334155 100%)'
+            : 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+          p: 3,
+          color: '#ffffff'
+        }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Box sx={{
+                p: 1.5,
+                borderRadius: 2,
+                bgcolor: 'rgba(255, 255, 255, 0.1)',
+                backdropFilter: 'blur(10px)'
+              }}>
+                <ShareIcon sx={{ fontSize: 24 }} />
+              </Box>
+              <Box>
+                <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
+                  แชร์ลิงก์เซิร์ฟเวอร์
+                </Typography>
+                <Typography variant="body2" sx={{ opacity: 0.8 }}>
+                  สร้างลิงก์สำหรับแชร์ให้เพื่อนๆ
+                </Typography>
+              </Box>
+            </Box>
+            <IconButton 
+              onClick={handleShareDialogClose} 
+              sx={{
+                color: 'rgba(255, 255, 255, 0.8)',
+                '&:hover': {
+                  bgcolor: 'rgba(255, 255, 255, 0.1)',
+                  color: '#ffffff'
+                }
+              }}
+            >
+              <CloseIcon />
+            </IconButton>
+          </Box>
+        </Box>
+        
+        <DialogContent sx={{ 
+          p: 3,
+          bgcolor: currentTheme === 'dark' ? '#1e293b' : '#ffffff'
+        }}>
+          {/* Server Info Card */}
+          <Paper 
+            elevation={0} 
+            sx={{ 
+              p: 3, 
+              mb: 3, 
+              bgcolor: currentTheme === 'dark' ? '#374151' : '#f8fafc',
+              border: `1px solid ${currentTheme === 'dark' ? '#4b5563' : '#e2e8f0'}`,
+              borderRadius: 3,
+              position: 'relative',
+              overflow: 'hidden'
+            }}
+          >
+            {/* Decorative element */}
+            <Box sx={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 4,
+              background: 'linear-gradient(90deg, #3b82f6, #10b981, #f59e0b)'
+            }} />
+            
+            <Typography 
+              variant="subtitle1" 
+              sx={{ 
+                mb: 2, 
+                fontWeight: 600,
+                color: currentTheme === 'dark' ? '#ffffff' : '#1f2937',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1
+              }}
+            >
+              <Box sx={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                bgcolor: '#10b981'
+              }} />
+              ข้อมูลเซิร์ฟเวอร์
+            </Typography>
+            
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 1.5 }}>
+              <Chip 
+                label={`${serverIp}`} 
+                size="medium"
+                sx={{
+                  bgcolor: currentTheme === 'dark' ? '#1e293b' : '#ffffff',
+                  color: currentTheme === 'dark' ? '#60a5fa' : '#3b82f6',
+                  border: `1px solid ${currentTheme === 'dark' ? '#3b82f6' : '#3b82f6'}`,
+                  fontWeight: 600,
+                  '& .MuiChip-label': { px: 2 }
+                }}
+                icon={<Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#3b82f6' }} />}
+              />
+              <Chip 
+                label={`Port: ${serverPort}`} 
+                size="medium"
+                sx={{
+                  bgcolor: currentTheme === 'dark' ? '#1e293b' : '#ffffff',
+                  color: currentTheme === 'dark' ? '#34d399' : '#10b981',
+                  border: `1px solid ${currentTheme === 'dark' ? '#10b981' : '#10b981'}`,
+                  fontWeight: 600,
+                  '& .MuiChip-label': { px: 2 }
+                }}
+                icon={<Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#10b981' }} />}
+              />
+              {customShareName && (
+                <Chip 
+                  label={customShareName} 
+                  size="medium"
+                  sx={{
+                    bgcolor: currentTheme === 'dark' ? '#1e293b' : '#ffffff',
+                    color: currentTheme === 'dark' ? '#fbbf24' : '#f59e0b',
+                    border: `1px solid ${currentTheme === 'dark' ? '#f59e0b' : '#f59e0b'}`,
+                    fontWeight: 600,
+                    '& .MuiChip-label': { px: 2 }
+                  }}
+                  icon={<Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#f59e0b' }} />}
+                />
+              )}
+            </Box>
+          </Paper>
+
+          {/* Server Name Input */}
+          <TextField
+            fullWidth
+            label="ชื่อเซิร์ฟเวอร์ (ไม่บังคับ)"
+            value={customShareName}
+            onChange={(e) => setCustomShareName(e.target.value)}
+            placeholder="เช่น Startown2.0, What City, Bangkok RP"
+            variant="outlined"
+            sx={{ mb: 2 }}
+            InputProps={{
+              sx: {
+                borderRadius: 3,
+                bgcolor: currentTheme === 'dark' ? '#374151' : '#ffffff',
+                color: currentTheme === 'dark' ? '#ffffff' : '#1f2937',
+                '& .MuiOutlinedInput-notchedOutline': {
+                  borderColor: currentTheme === 'dark' ? '#4b5563' : '#d1d5db',
+                  borderWidth: 2
+                },
+                '&:hover .MuiOutlinedInput-notchedOutline': {
+                  borderColor: currentTheme === 'dark' ? '#6b7280' : '#9ca3af'
+                },
+                '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                  borderColor: '#3b82f6',
+                  borderWidth: 2
+                }
+              }
+            }}
+            InputLabelProps={{
+              sx: { 
+                color: currentTheme === 'dark' ? '#9ca3af' : '#6b7280',
+                '&.Mui-focused': {
+                  color: '#3b82f6'
+                }
+              }
+            }}
+          />
+
+          {/* Shared By Input */}
+          <TextField
+            fullWidth
+            label="แชร์โดย (ไม่บังคับ)"
+            value={sharedFromUser}
+            onChange={(e) => setSharedFromUser(e.target.value)}
+            placeholder="เช่น ชื่อของคุณ หรือ ชื่อกิลด์"
+            variant="outlined"
+            sx={{ mb: 3 }}
+            InputProps={{
+              sx: {
+                borderRadius: 3,
+                bgcolor: currentTheme === 'dark' ? '#374151' : '#ffffff',
+                color: currentTheme === 'dark' ? '#ffffff' : '#1f2937',
+                '& .MuiOutlinedInput-notchedOutline': {
+                  borderColor: currentTheme === 'dark' ? '#4b5563' : '#d1d5db',
+                  borderWidth: 2
+                },
+                '&:hover .MuiOutlinedInput-notchedOutline': {
+                  borderColor: currentTheme === 'dark' ? '#6b7280' : '#9ca3af'
+                },
+                '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                  borderColor: '#10b981',
+                  borderWidth: 2
+                }
+              }
+            }}
+            InputLabelProps={{
+              sx: { 
+                color: currentTheme === 'dark' ? '#9ca3af' : '#6b7280',
+                '&.Mui-focused': {
+                  color: '#10b981'
+                }
+              }
+            }}
+          />
+
+          {/* Generated URL */}
+          {shareUrl && (
+            <Paper
+              elevation={0}
+              sx={{
+                p: 3,
+                bgcolor: currentTheme === 'dark' ? '#374151' : '#f8fafc',
+                border: `2px solid ${currentTheme === 'dark' ? '#10b981' : '#10b981'}`,
+                borderRadius: 3,
+                position: 'relative'
+              }}
+            >
+              <Typography 
+                variant="subtitle2" 
+                sx={{ 
+                  mb: 2,
+                  color: currentTheme === 'dark' ? '#34d399' : '#059669',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1
+                }}
+              >
+                <LinkIcon sx={{ fontSize: 18 }} />
+                ลิงก์สำหรับแชร์
+              </Typography>
+              
+              <Box sx={{
+                p: 2,
+                bgcolor: currentTheme === 'dark' ? '#1e293b' : '#ffffff',
+                borderRadius: 2,
+                border: `1px solid ${currentTheme === 'dark' ? '#4b5563' : '#e5e7eb'}`,
+                fontFamily: 'monospace',
+                fontSize: '0.875rem',
+                color: currentTheme === 'dark' ? '#d1d5db' : '#374151',
+                wordBreak: 'break-all',
+                position: 'relative'
+              }}>
+                {shareUrl}
+                <IconButton 
+                  onClick={copyShareUrl}
+                  sx={{
+                    position: 'absolute',
+                    top: 4,
+                    right: 4,
+                    color: currentTheme === 'dark' ? '#9ca3af' : '#6b7280',
+                    bgcolor: currentTheme === 'dark' ? '#374151' : '#f3f4f6',
+                    '&:hover': {
+                      bgcolor: currentTheme === 'dark' ? '#4b5563' : '#e5e7eb',
+                      color: currentTheme === 'dark' ? '#ffffff' : '#1f2937'
+                    }
+                  }}
+                  size="small"
+                >
+                  <CopyIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </Box>
+            </Paper>
+          )}
+        </DialogContent>
+        
+        <DialogActions sx={{ 
+          p: 3,
+          bgcolor: currentTheme === 'dark' ? '#1e293b' : '#ffffff',
+          borderTop: `1px solid ${currentTheme === 'dark' ? '#374151' : '#e5e7eb'}`,
+          gap: 2
+        }}>
+          <Button 
+            onClick={handleShareDialogClose} 
+            variant="outlined"
+            sx={{ 
+              borderRadius: 3,
+              px: 3,
+              py: 1,
+              color: currentTheme === 'dark' ? '#9ca3af' : '#6b7280',
+              borderColor: currentTheme === 'dark' ? '#4b5563' : '#d1d5db',
+              '&:hover': {
+                bgcolor: currentTheme === 'dark' ? '#374151' : '#f3f4f6',
+                borderColor: currentTheme === 'dark' ? '#6b7280' : '#9ca3af'
+              }
+            }}
+          >
+            ปิด
+          </Button>
+          
+          {shareUrl ? (
+            <Button 
+              onClick={copyShareUrl} 
+              variant="contained" 
+              startIcon={<CopyIcon />}
+              sx={{ 
+                borderRadius: 3,
+                px: 4,
+                py: 1,
+                bgcolor: '#10b981', 
+                '&:hover': { bgcolor: '#059669' },
+                color: '#ffffff',
+                fontWeight: 600,
+                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
+              }}
+            >
+              คัดลอกลิงก์
+            </Button>
+          ) : (
+            <Button 
+              onClick={generateShareUrl} 
+              variant="contained" 
+              startIcon={<LinkIcon />}
+              sx={{
+                borderRadius: 3,
+                px: 4,
+                py: 1,
+                bgcolor: '#3b82f6',
+                '&:hover': { bgcolor: '#2563eb' },
+                color: '#ffffff',
+                fontWeight: 600,
+                boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)'
+              }}
+            >
+              สร้างลิงก์
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
+
+
+
+      </div>
+    </ThemeProvider>
   );
 };
 
