@@ -38,3 +38,79 @@ html, body {
   color: white !important;
 }
 
+/* Discord webhook indicator animations */
+.webhook-indicator {
+  animation: pulse-green 2s infinite;
+  will-change: opacity, transform;
+}
+
+.webhook-indicator-disabled {
+  animation: pulse-red 2s infinite;
+  will-change: opacity, transform;
+}
+
+@keyframes pulse-green {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.1);
+  }
+}
+
+@keyframes pulse-red {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.1);
+  }
+}
+
+/* Prevent flickering on hover */
+.settings-dropdown {
+  backface-visibility: hidden;
+  transform: translateZ(0);
+  min-width: 200px; /* Ensure enough width for Discord Webhook text */
+}
+
+.settings-dropdown button {
+  backface-visibility: hidden;
+  transform: translateZ(0);
+  transition: background-color 0.15s ease-in-out;
+}
+
+/* Discord Webhook button styling */
+.discord-webhook-button {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Discord webhook dialog animations */
+.webhook-dialog-enter {
+  opacity: 0;
+  transform: scale(0.95);
+}
+
+.webhook-dialog-enter-active {
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity 200ms, transform 200ms;
+}
+
+.webhook-dialog-exit {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.webhook-dialog-exit-active {
+  opacity: 0;
+  transform: scale(0.95);
+  transition: opacity 200ms, transform 200ms;
+}
+
